@@ -1,8 +1,11 @@
 import AppKit
+import HotKey
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem?
     private var clipboardMonitor: ClipboardMonitor?
+    private var pickerController: ClipPickerPanelController?
+    private var hotKey: HotKey?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -12,6 +15,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let monitor = ClipboardMonitor(historyStore: historyStore)
             monitor.start()
             clipboardMonitor = monitor
+            setUpPicker(historyStore: historyStore)
         } catch {
             NSLog("Unable to initialize clipboard history: \(error)")
         }
@@ -22,6 +26,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         let menu = NSMenu()
+        menu.addItem(NSMenuItem(title: "Show Clipboard History", action: #selector(showPicker), keyEquivalent: ""))
         menu.addItem(NSMenuItem(title: "About", action: #selector(showAbout), keyEquivalent: ""))
         menu.addItem(NSMenuItem.separator())
         menu.addItem(NSMenuItem(title: "Quit", action: #selector(quit), keyEquivalent: "q"))
@@ -35,6 +40,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         clipboardMonitor?.stop()
+    }
+
+    /// Default picker shortcut: ⌘⇧V.
+    @MainActor
+    private func setUpPicker(historyStore: ClipboardHistoryStore) {
+        let viewModel = ClipPickerViewModel(
+            historyStore: historyStore,
+            paster: SystemClipPaster()
+        )
+        let controller = ClipPickerPanelController(viewModel: viewModel)
+        pickerController = controller
+
+        let hotKey = HotKey(key: .v, modifiers: [.command, .shift])
+        hotKey.keyDownHandler = { [weak controller] in
+            MainActor.assumeIsolated {
+                controller?.toggle()
+            }
+        }
+        self.hotKey = hotKey
+    }
+
+    @MainActor
+    @objc private func showPicker() {
+        pickerController?.show()
     }
 
     @objc private func showAbout() {

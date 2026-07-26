@@ -59,6 +59,11 @@ final class ClipboardHistoryStore {
         return try modelContext.fetch(descriptor)
     }
 
+    func delete(_ entry: ClipEntry) throws {
+        modelContext.delete(entry)
+        try modelContext.save()
+    }
+
     private func evictEntriesIfNeeded(
         currentCount: Int,
         insertedEntry: ClipEntry
