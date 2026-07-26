@@ -4,7 +4,7 @@ Menu-bar clipboard manager for macOS.
 
 ## Requirements
 
-- macOS 13+
+- macOS 14+
 - Xcode 15+ (or Swift 5.9+ command line tools)
 
 ## Build & run
@@ -23,7 +23,8 @@ swift run
 ```
 
 The app launches as a menu-bar accessory (no Dock icon) with a status item.
-Click it for the placeholder menu (About, Quit).
+It polls the system pasteboard every 500 ms and persists text, rich text,
+images, and file URLs in a SwiftData history store.
 
 ## Dependencies
 
