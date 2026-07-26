@@ -33,10 +33,26 @@ final class ClipPickerPanelController: NSObject, NSWindowDelegate {
 
         let panel = panel ?? makePanel()
         self.panel = panel
-        panel.center()
+        moveToCursor(panel)
         NSApp.activate(ignoringOtherApps: true)
         panel.makeKeyAndOrderFront(nil)
         startKeyMonitor()
+    }
+
+    /// Opens the panel at the pointer, the way Windows' Win+V does.
+    private func moveToCursor(_ panel: ClipPickerPanel) {
+        let cursor = NSEvent.mouseLocation
+        let screen = NSScreen.screens.first { $0.frame.contains(cursor) }
+            ?? NSScreen.main
+        guard let visibleFrame = screen?.visibleFrame else { return }
+
+        panel.setFrameOrigin(
+            PanelPlacement.origin(
+                cursor: cursor,
+                panelSize: panel.frame.size,
+                visibleFrame: visibleFrame
+            )
+        )
     }
 
     func hide() {
@@ -49,21 +65,30 @@ final class ClipPickerPanelController: NSObject, NSWindowDelegate {
 
     private func makePanel() -> ClipPickerPanel {
         let panel = ClipPickerPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 720, height: 420),
-            styleMask: [.titled, .fullSizeContentView, .nonactivatingPanel],
+            contentRect: NSRect(origin: .zero, size: ClipPickerView.panelSize),
+            styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
         )
-        panel.titleVisibility = .hidden
-        panel.titlebarAppearsTransparent = true
         panel.isMovableByWindowBackground = true
         panel.level = .floating
         panel.hidesOnDeactivate = false
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.delegate = self
-        panel.contentView = NSHostingView(
+        // The rounded corners come from the SwiftUI content, so the window
+        // itself must not paint a square background behind them.
+        panel.isOpaque = false
+        panel.backgroundColor = .clear
+        panel.hasShadow = true
+        let hostingView = NSHostingView(
             rootView: ClipPickerView(viewModel: viewModel)
         )
+        // Without this the hosting view propagates its intrinsic height to the
+        // window, so the panel shrink-wraps to however many clips happen to be
+        // in the list instead of keeping a fixed size.
+        hostingView.sizingOptions = []
+        panel.contentView = hostingView
+        panel.setContentSize(ClipPickerView.panelSize)
         return panel
     }
 

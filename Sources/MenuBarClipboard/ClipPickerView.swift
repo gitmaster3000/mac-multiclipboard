@@ -2,18 +2,20 @@ import AppKit
 import SwiftUI
 
 struct ClipPickerView: View {
+    static let panelSize = CGSize(width: 340, height: 420)
+
     @ObservedObject var viewModel: ClipPickerViewModel
     @FocusState private var searchFieldFocused: Bool
 
     var body: some View {
-        HStack(spacing: 0) {
-            listColumn
-                .frame(width: 320)
+        VStack(spacing: 0) {
+            searchField
             Divider()
-            previewColumn
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            entryList
         }
-        .frame(width: 720, height: 420)
+        .frame(width: Self.panelSize.width, height: Self.panelSize.height)
+        .background(.regularMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 10))
         .onChange(of: viewModel.focus) { _, focus in
             searchFieldFocused = focus == .search
         }
@@ -22,97 +24,93 @@ struct ClipPickerView: View {
         }
     }
 
-    private var listColumn: some View {
-        VStack(spacing: 0) {
+    private var searchField: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(.secondary)
+                .font(.system(size: 12))
             TextField("Search", text: $viewModel.searchText)
-                .textFieldStyle(.roundedBorder)
+                .textFieldStyle(.plain)
+                .font(.system(size: 12))
                 .focused($searchFieldFocused)
-                .padding(8)
+        }
+        .padding(.horizontal, 10)
+        .frame(height: 32)
+    }
 
-            Divider()
-
+    @ViewBuilder
+    private var entryList: some View {
+        if viewModel.filteredEntries.isEmpty {
+            Text(viewModel.searchText.isEmpty ? "No clips yet" : "No matches")
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else {
             ScrollViewReader { proxy in
-                List {
-                    ForEach(
-                        Array(viewModel.filteredEntries.enumerated()),
-                        id: \.element.id
-                    ) { index, entry in
-                        row(for: entry, isSelected: index == viewModel.selectedIndex)
-                            .id(index)
-                            .contentShape(Rectangle())
-                            .onTapGesture { viewModel.selectedIndex = index }
+                ScrollView {
+                    LazyVStack(spacing: 2) {
+                        ForEach(
+                            Array(viewModel.filteredEntries.enumerated()),
+                            id: \.element.id
+                        ) { index, entry in
+                            row(for: entry, isSelected: index == viewModel.selectedIndex)
+                                .id(index)
+                                .contentShape(Rectangle())
+                                .onTapGesture { viewModel.selectedIndex = index }
+                        }
+                    }
+                    .padding(6)
+                }
+                .onChange(of: viewModel.selectedIndex) { _, index in
+                    withAnimation(.easeOut(duration: 0.12)) {
+                        proxy.scrollTo(index)
                     }
                 }
-                .listStyle(.sidebar)
-                .onChange(of: viewModel.selectedIndex) { _, index in
-                    proxy.scrollTo(index)
-                }
-            }
-
-            if viewModel.filteredEntries.isEmpty {
-                Text("No clips")
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
     }
 
     private func row(for entry: ClipEntry, isSelected: Bool) -> some View {
         HStack(spacing: 8) {
-            Image(systemName: symbolName(for: entry.clipKind))
-                .foregroundStyle(.secondary)
+            leadingIcon(for: entry)
+                .frame(width: 26, height: 26)
+
             Text(entry.preview)
+                .font(.system(size: 12))
                 .lineLimit(1)
-            Spacer(minLength: 0)
+                .truncationMode(.tail)
+
+            Spacer(minLength: 4)
+
+            Text(entry.createdAt.formatted(.relative(presentation: .numeric)))
+                .font(.system(size: 10))
+                .foregroundStyle(.tertiary)
+                .lineLimit(1)
+                .layoutPriority(-1)
         }
-        .padding(.vertical, 2)
-        .padding(.horizontal, 4)
+        .padding(.horizontal, 8)
+        .frame(height: 36)
         .background(
-            RoundedRectangle(cornerRadius: 4)
-                .fill(isSelected ? Color.accentColor.opacity(0.25) : .clear)
+            RoundedRectangle(cornerRadius: 6)
+                .fill(isSelected ? Color.accentColor.opacity(0.85) : .clear)
         )
+        .foregroundStyle(isSelected ? AnyShapeStyle(.white) : AnyShapeStyle(.primary))
     }
 
+    /// Image clips show a thumbnail in place of the kind icon, so the list
+    /// stays scannable without a preview pane.
     @ViewBuilder
-    private var previewColumn: some View {
-        if let entry = viewModel.selectedEntry {
-            VStack(alignment: .leading, spacing: 8) {
-                Text(entry.createdAt.formatted(date: .abbreviated, time: .standard))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
-                switch entry.clipKind {
-                case .image:
-                    if let image = NSImage(data: entry.data) {
-                        Image(nsImage: image)
-                            .resizable()
-                            .scaledToFit()
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    } else {
-                        Text("Unreadable image")
-                            .foregroundStyle(.secondary)
-                    }
-                case .rtf:
-                    ScrollView {
-                        Text(Self.plainText(fromRTF: entry.data) ?? entry.preview)
-                            .textSelection(.enabled)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                case .text, .fileURL, nil:
-                    ScrollView {
-                        Text(String(decoding: entry.data, as: UTF8.self))
-                            .textSelection(.enabled)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                }
-
-                Spacer(minLength: 0)
-            }
-            .padding(12)
+    private func leadingIcon(for entry: ClipEntry) -> some View {
+        if entry.clipKind == .image, let image = NSImage(data: entry.data) {
+            Image(nsImage: image)
+                .resizable()
+                .scaledToFill()
+                .frame(width: 26, height: 26)
+                .clipShape(RoundedRectangle(cornerRadius: 4))
         } else {
-            Text("Nothing selected")
+            Image(systemName: symbolName(for: entry.clipKind))
+                .font(.system(size: 13))
                 .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 
@@ -124,13 +122,5 @@ struct ClipPickerView: View {
         case .fileURL: "folder"
         case nil: "questionmark"
         }
-    }
-
-    private static func plainText(fromRTF data: Data) -> String? {
-        try? NSAttributedString(
-            data: data,
-            options: [.documentType: NSAttributedString.DocumentType.rtf],
-            documentAttributes: nil
-        ).string
     }
 }

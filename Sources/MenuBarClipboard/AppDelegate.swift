@@ -5,6 +5,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem?
     private var clipboardMonitor: ClipboardMonitor?
     private var pickerController: ClipPickerPanelController?
+    private var settingsController: SettingsWindowController?
     private var hotKey: HotKey?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -27,6 +28,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let menu = NSMenu()
         menu.addItem(NSMenuItem(title: "Show Clipboard History", action: #selector(showPicker), keyEquivalent: ""))
+        menu.addItem(NSMenuItem(title: "Settings…", action: #selector(showSettings), keyEquivalent: ","))
         menu.addItem(NSMenuItem(title: "About", action: #selector(showAbout), keyEquivalent: ""))
         menu.addItem(NSMenuItem.separator())
         menu.addItem(NSMenuItem(title: "Quit", action: #selector(quit), keyEquivalent: "q"))
@@ -42,7 +44,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         clipboardMonitor?.stop()
     }
 
-    /// Default picker shortcut: ⌘⇧V.
     @MainActor
     private func setUpPicker(historyStore: ClipboardHistoryStore) {
         let viewModel = ClipPickerViewModel(
@@ -52,10 +53,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let controller = ClipPickerPanelController(viewModel: viewModel)
         pickerController = controller
 
-        let hotKey = HotKey(key: .v, modifiers: [.command, .shift])
-        hotKey.keyDownHandler = { [weak controller] in
+        applyShortcut(ShortcutPreference.load(from: .standard))
+
+        settingsController = SettingsWindowController(
+            viewModel: SettingsViewModel { [weak self] shortcut in
+                self?.applyShortcut(shortcut)
+            }
+        )
+    }
+
+    /// Registers the picker hot key, replacing any existing one. Passing `nil`
+    /// leaves no hot key registered, which the settings probe needs so it can
+    /// claim the combo it is testing.
+    @MainActor
+    private func applyShortcut(_ shortcut: ShortcutPreference?) {
+        hotKey = nil
+
+        guard let shortcut, shortcut.isValid else { return }
+
+        let hotKey = HotKey(
+            keyCombo: KeyCombo(
+                carbonKeyCode: shortcut.carbonKeyCode,
+                carbonModifiers: shortcut.carbonModifiers
+            )
+        )
+        hotKey.keyDownHandler = { [weak self] in
             MainActor.assumeIsolated {
-                controller?.toggle()
+                self?.pickerController?.toggle()
             }
         }
         self.hotKey = hotKey
@@ -64,6 +88,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @MainActor
     @objc private func showPicker() {
         pickerController?.show()
+    }
+
+    @MainActor
+    @objc private func showSettings() {
+        settingsController?.show()
     }
 
     @objc private func showAbout() {
