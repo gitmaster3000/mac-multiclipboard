@@ -61,10 +61,26 @@ therefore verifies a candidate before saving it: it calls
 unregisters. On failure the recorder reports that the combo is unavailable and
 keeps the previous shortcut.
 
-This does not detect a combo consumed by an event tap upstream of Carbon —
-that failure mode reports `noErr` and can only be observed by pressing the
-keys. It does catch collisions with another Carbon hot key
-(`eventHotKeyExistsErr`).
+Registration status alone is not enough. A combo consumed by an event tap
+upstream of Carbon registers with `noErr` and still never fires — this is what
+happened to Cmd+Shift+V, which Siri's event taps swallow. Checking the status
+code would have reported success for a shortcut that was completely dead.
+
+So the recorder confirms the whole path, not just registration. After a combo
+records successfully, the settings window enters a confirmation state:
+
+1. The candidate shortcut is registered with a temporary handler.
+2. The window asks the user to press the combo.
+3. If the handler fires, the shortcut is saved and applied.
+4. If nothing fires within 10 seconds, the window reports that the combo does
+   not reach the app and suggests a different one. The previous shortcut is
+   kept.
+
+The user can skip the confirmation and save anyway, for the case where they
+are setting a shortcut they cannot press right now.
+
+This is the only way to detect a tap-swallowed combo from inside the app;
+there is no API that reports which process consumed a keystroke.
 
 ### Panel placement
 
@@ -125,9 +141,19 @@ ignored so the field waits for a real key. Escape cancels recording.
 - cursor near the bottom edge flips the panel above the cursor
 - cursor in a corner satisfies both constraints and stays inside the frame
 
-The recorder view and settings window are not unit tested; they are thin
-wrappers over AppKit first-responder behaviour with no logic worth asserting
-in isolation.
+`ShortcutConfirmation` (the state machine behind the confirm step)
+
+- starts idle, moves to awaiting on a recorded combo
+- moves to confirmed when the handler reports a fire
+- moves to failed when the deadline passes with no fire
+- a fire arriving after failure does not resurrect the confirmed state
+
+The state machine is separated from the window so it can be driven by an
+injected clock in tests rather than a real 10-second wait.
+
+The recorder view and settings window themselves are not unit tested; they are
+thin wrappers over AppKit first-responder behaviour with no logic worth
+asserting in isolation.
 
 ## Out of scope
 
