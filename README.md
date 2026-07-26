@@ -4,26 +4,23 @@ Menu-bar clipboard manager for macOS.
 
 ## Requirements
 
-- macOS 13+
+- macOS 14+
 - Xcode 15+ (or Swift 5.9+ command line tools)
 
 ## Build & run
 
-The project is a Swift Package (SwiftPM), which Xcode opens natively as a project:
+For setup instructions, command-line and Xcode workflows, verification, and
+troubleshooting, see [Running Multiclipboard](docs/RUNNING.md).
+
+The quickest way to launch from this directory is:
 
 ```bash
-open Package.swift   # opens in Xcode
-```
-
-Or from the command line:
-
-```bash
-swift build
 swift run
 ```
 
 The app launches as a menu-bar accessory (no Dock icon) with a status item.
-Click it for the placeholder menu (About, Quit).
+It polls the system pasteboard every 500 ms and persists text, rich text,
+images, and file URLs in a SwiftData history store.
 
 ## Dependencies
 

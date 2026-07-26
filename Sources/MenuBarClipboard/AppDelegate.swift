@@ -2,9 +2,19 @@ import AppKit
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem?
+    private var clipboardMonitor: ClipboardMonitor?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
+
+        do {
+            let historyStore = try ClipboardHistoryStore()
+            let monitor = ClipboardMonitor(historyStore: historyStore)
+            monitor.start()
+            clipboardMonitor = monitor
+        } catch {
+            NSLog("Unable to initialize clipboard history: \(error)")
+        }
 
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         if let button = item.button {
@@ -21,6 +31,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         item.menu = menu
 
         statusItem = item
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        clipboardMonitor?.stop()
     }
 
     @objc private func showAbout() {
