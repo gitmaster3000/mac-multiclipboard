@@ -24,7 +24,7 @@ images, and file URLs in a SwiftData history store.
 
 ## Picker panel
 
-Press **⌘⇧V** from any app (or pick *Show Clipboard History* in the menu) to open
+Press **⌘⌥V** from any app (or pick *Show Clipboard History* in the menu) to open
 the floating picker. Keyboard shortcuts inside the panel:
 
 | Key | Action |

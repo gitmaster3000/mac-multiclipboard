@@ -42,7 +42,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         clipboardMonitor?.stop()
     }
 
-    /// Default picker shortcut: ⌘⇧V.
+    /// Default picker shortcut: ⌘⌥V.
     @MainActor
     private func setUpPicker(historyStore: ClipboardHistoryStore) {
         let viewModel = ClipPickerViewModel(
@@ -52,7 +52,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let controller = ClipPickerPanelController(viewModel: viewModel)
         pickerController = controller
 
-        let hotKey = HotKey(key: .v, modifiers: [.command, .shift])
+        let hotKey = HotKey(key: .v, modifiers: [.command, .option])
         hotKey.keyDownHandler = { [weak controller] in
             MainActor.assumeIsolated {
                 controller?.toggle()
