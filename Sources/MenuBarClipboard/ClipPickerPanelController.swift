@@ -80,9 +80,15 @@ final class ClipPickerPanelController: NSObject, NSWindowDelegate {
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = true
-        panel.contentView = NSHostingView(
+        let hostingView = NSHostingView(
             rootView: ClipPickerView(viewModel: viewModel)
         )
+        // Without this the hosting view propagates its intrinsic height to the
+        // window, so the panel shrink-wraps to however many clips happen to be
+        // in the list instead of keeping a fixed size.
+        hostingView.sizingOptions = []
+        panel.contentView = hostingView
+        panel.setContentSize(ClipPickerView.panelSize)
         return panel
     }
 
