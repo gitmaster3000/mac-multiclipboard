@@ -9,16 +9,12 @@ Menu-bar clipboard manager for macOS.
 
 ## Build & run
 
-The project is a Swift Package (SwiftPM), which Xcode opens natively as a project:
+For setup instructions, command-line and Xcode workflows, verification, and
+troubleshooting, see [Running Multiclipboard](docs/RUNNING.md).
+
+The quickest way to launch from this directory is:
 
 ```bash
-open Package.swift   # opens in Xcode
-```
-
-Or from the command line:
-
-```bash
-swift build
 swift run
 ```
 
