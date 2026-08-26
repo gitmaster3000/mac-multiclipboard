@@ -2,6 +2,13 @@
 
 Menu-bar clipboard manager for macOS.
 
+## Screenshots
+
+| Clipboard history | Settings |
+| --- | --- |
+| <img src="docs/screenshots/clipboard-history.png" alt="Clipboard history in light mode with search, image previews, pinning, and delete controls" width="380"> | <img src="docs/screenshots/settings.png" alt="Settings showing picker and screenshot shortcuts, pin placement, System, Light, and Dark appearance options, and launch at login" width="338"> |
+| Search and paste saved text and images, pin entries, or remove clips. | Customize screenshot shortcuts, appearance, pin placement, and launch at login. |
+
 ## Requirements
 
 - macOS 14+
