@@ -9,15 +9,23 @@ final class ClipPickerViewModel: ObservableObject {
     }
     @Published var selectedIndex: Int = 0
     @Published var focus: PickerFocus = .list
+    @Published private(set) var presentationID = UUID()
 
     var onDismiss: () -> Void = {}
+    var onDeleteAll: () -> Void = {}
 
     private let historyStore: ClipboardHistoryStore
     private let paster: ClipPasting
+    private let defaults: UserDefaults
 
-    init(historyStore: ClipboardHistoryStore, paster: ClipPasting) {
+    init(
+        historyStore: ClipboardHistoryStore,
+        paster: ClipPasting,
+        defaults: UserDefaults = .standard
+    ) {
         self.historyStore = historyStore
         self.paster = paster
+        self.defaults = defaults
     }
 
     var filteredEntries: [ClipEntry] {
@@ -35,12 +43,17 @@ final class ClipPickerViewModel: ObservableObject {
     }
 
     func reload() {
-        entries = (try? historyStore.entries()) ?? []
+        entries = (
+            try? historyStore.entries(
+                pinPosition: PinPositionPreference.load(from: defaults)
+            )
+        ) ?? []
         clampSelection()
     }
 
     /// Resets transient state so every panel presentation starts fresh.
     func prepareForPresentation() {
+        presentationID = UUID()
         searchText = ""
         selectedIndex = 0
         focus = .list
@@ -81,8 +94,38 @@ final class ClipPickerViewModel: ObservableObject {
 
     func deleteSelection() {
         guard let entry = selectedEntry else { return }
+        delete(entry)
+    }
+
+    func delete(_ entry: ClipEntry) {
         try? historyStore.delete(entry)
         reload()
+    }
+
+    func deleteAll() {
+        onDeleteAll()
+        try? historyStore.deleteAll()
+        reload()
+    }
+
+    func togglePin(_ entry: ClipEntry) {
+        let selectedID = selectedEntry?.id
+        try? historyStore.setPinned(!entry.pinned, for: entry)
+        reload(selecting: selectedID)
+    }
+
+    private func reload(selecting entryID: UUID?) {
+        entries = (
+            try? historyStore.entries(
+                pinPosition: PinPositionPreference.load(from: defaults)
+            )
+        ) ?? []
+        if let entryID,
+           let index = filteredEntries.firstIndex(where: { $0.id == entryID }) {
+            selectedIndex = index
+        } else {
+            clampSelection()
+        }
     }
 
     private func clampSelection() {

@@ -1,3 +1,4 @@
+import AppKit
 import CryptoKit
 import Foundation
 import SwiftData
@@ -26,13 +27,27 @@ final class ClipboardHistoryStore {
 
     @discardableResult
     func capture(_ clip: CapturedClip, at date: Date = Date()) throws -> ClipEntry? {
-        let contentHash = SHA256.hash(data: clip.data)
         let descriptor = FetchDescriptor<ClipEntry>()
-        let entries = try modelContext.fetch(descriptor)
+        let entries = try collapseDuplicates(in: modelContext.fetch(descriptor))
+        let contentFingerprint = Self.contentFingerprint(
+            kind: clip.kind,
+            preview: clip.preview,
+            data: clip.data,
+            deduplicationData: clip.deduplicationData
+        )
 
-        guard !entries.contains(where: {
-            SHA256.hash(data: $0.data) == contentHash
-        }) else {
+        if let existing = entries.first(where: {
+            Self.contentFingerprint(for: $0) == contentFingerprint
+        }) {
+            // Re-copying existing content moves it to the top instead of
+            // creating another row. Preserve its pin while keeping the latest
+            // representation (for example, rich text replacing plain text).
+            existing.kind = clip.kind.rawValue
+            existing.preview = clip.preview
+            existing.data = clip.data
+            existing.contentFingerprint = contentFingerprint
+            existing.createdAt = date
+            try modelContext.save()
             return nil
         }
 
@@ -40,6 +55,7 @@ final class ClipboardHistoryStore {
             kind: clip.kind,
             preview: clip.preview,
             data: clip.data,
+            contentFingerprint: contentFingerprint,
             createdAt: date
         )
         modelContext.insert(entry)
@@ -51,16 +67,30 @@ final class ClipboardHistoryStore {
         return insertedEntryWasEvicted ? nil : entry
     }
 
-    func entries() throws -> [ClipEntry] {
-        var descriptor = FetchDescriptor<ClipEntry>(
-            sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
-        )
+    func entries(
+        pinPosition: PinPositionPreference = .top
+    ) throws -> [ClipEntry] {
+        var descriptor = FetchDescriptor<ClipEntry>()
         descriptor.includePendingChanges = true
-        return try modelContext.fetch(descriptor)
+        return try collapseDuplicates(in: modelContext.fetch(descriptor))
+            .sorted {
+                Self.entrySort($0, $1, pinPosition: pinPosition)
+            }
     }
 
     func delete(_ entry: ClipEntry) throws {
         modelContext.delete(entry)
+        try modelContext.save()
+    }
+
+    func deleteAll() throws {
+        let entries = try modelContext.fetch(FetchDescriptor<ClipEntry>())
+        entries.forEach(modelContext.delete)
+        try modelContext.save()
+    }
+
+    func setPinned(_ pinned: Bool, for entry: ClipEntry) throws {
+        entry.pinned = pinned
         try modelContext.save()
     }
 
@@ -82,6 +112,101 @@ final class ClipboardHistoryStore {
         }
         evictionCandidates.forEach(modelContext.delete)
         return insertedEntryWasEvicted
+    }
+
+    /// Removes legacy duplicate rows, preferring a pinned copy and then the
+    /// newest copy. Text and rich text share a key based on their visible
+    /// content, while binary and file entries use their exact bytes.
+    private func collapseDuplicates(in entries: [ClipEntry]) throws -> [ClipEntry] {
+        let preferred = entries.sorted(by: Self.duplicatePreferenceSort)
+        var seen = Set<String>()
+        var result: [ClipEntry] = []
+        var removedAny = false
+
+        for entry in preferred {
+            if seen.insert(Self.contentFingerprint(for: entry)).inserted {
+                result.append(entry)
+            } else {
+                modelContext.delete(entry)
+                removedAny = true
+            }
+        }
+
+        if removedAny {
+            try modelContext.save()
+        }
+        return result
+    }
+
+    private static func contentFingerprint(for entry: ClipEntry) -> String {
+        if let fingerprint = entry.contentFingerprint {
+            return fingerprint
+        }
+        let fingerprint = contentFingerprint(
+            kind: entry.clipKind,
+            preview: entry.preview,
+            data: entry.data,
+            deduplicationData: nil
+        )
+        entry.contentFingerprint = fingerprint
+        return fingerprint
+    }
+
+    private static func contentFingerprint(
+        kind: ClipKind?,
+        preview: String,
+        data: Data,
+        deduplicationData: Data?
+    ) -> String {
+        let category: String
+        let payload: Data
+
+        switch kind {
+        case .text:
+            category = "text"
+            payload = deduplicationData ?? data
+        case .rtf:
+            category = "text"
+            payload = deduplicationData ?? Data(
+                ((try? NSAttributedString(
+                    data: data,
+                    options: [.documentType: NSAttributedString.DocumentType.rtf],
+                    documentAttributes: nil
+                ))?.string ?? preview).utf8
+            )
+        case .image, .fileURL, nil:
+            category = kind?.rawValue ?? "unknown"
+            payload = data
+        }
+
+        return category + ":" + Data(SHA256.hash(data: payload)).base64EncodedString()
+    }
+
+    private static func entrySort(
+        _ lhs: ClipEntry,
+        _ rhs: ClipEntry,
+        pinPosition: PinPositionPreference
+    ) -> Bool {
+        if lhs.pinned != rhs.pinned {
+            return pinPosition == .top ? lhs.pinned : !lhs.pinned
+        }
+        if lhs.createdAt != rhs.createdAt {
+            return lhs.createdAt > rhs.createdAt
+        }
+        return lhs.id.uuidString < rhs.id.uuidString
+    }
+
+    private static func duplicatePreferenceSort(
+        _ lhs: ClipEntry,
+        _ rhs: ClipEntry
+    ) -> Bool {
+        if lhs.pinned != rhs.pinned {
+            return lhs.pinned && !rhs.pinned
+        }
+        if lhs.createdAt != rhs.createdAt {
+            return lhs.createdAt > rhs.createdAt
+        }
+        return lhs.id.uuidString < rhs.id.uuidString
     }
 
     private static func persistentStoreURL() throws -> URL {

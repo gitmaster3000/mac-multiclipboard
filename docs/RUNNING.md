@@ -24,23 +24,42 @@ xcode-select --install
 
 ## Run from Terminal
 
-From the repository root, resolve dependencies, build, and run the app:
+From the repository root, build and launch the app bundle:
 
 ```bash
-swift package resolve
-swift build
-swift run
+./Scripts/make_app.sh
+open Multiclipboard.app
 ```
 
 After the build completes, a clipboard icon appears in the macOS menu bar. The
-process remains attached to the terminal; this is expected. Use the menu-bar
-icon's **Quit** item to stop the app cleanly.
+app runs independently of the terminal. Use the menu-bar icon's **Quit** item
+to stop it cleanly.
 
-The shorter command below is enough after the initial setup because SwiftPM
-builds automatically when required:
+For a quicker development-only launch, SwiftPM can run the bare executable:
 
 ```bash
 swift run
+```
+
+Use the app-bundle workflow above when testing automatic paste-back. macOS
+cannot retain Accessibility permission for a bare SwiftPM executable.
+
+The packaging script uses the first installed code-signing identity by default.
+To choose one explicitly:
+
+```bash
+MULTICLIP_SIGNING_IDENTITY="Apple Development: Your Name (TEAMID)" \
+  ./Scripts/make_app.sh
+```
+
+If no identity is available, the script uses an ad-hoc signature and warns that
+Accessibility permission must be granted again whenever the binary is rebuilt.
+Release packaging refuses this fallback so an app with unstable Accessibility
+identity cannot be distributed accidentally:
+
+```bash
+MULTICLIP_SIGNING_IDENTITY="Developer ID Application: Your Name (TEAMID)" \
+  ./Scripts/make_app.sh release
 ```
 
 ## Run from Xcode
@@ -128,3 +147,12 @@ xcode-select -p
 
 If multiple Xcode versions are installed, select the intended version in
 Xcode's **Settings → Locations → Command Line Tools**.
+
+### Paste-back keeps asking for Accessibility permission
+
+Quit any old copy of Multiclipboard, rebuild the bundle with
+`./Scripts/make_app.sh`, then launch **Multiclipboard.app** and enable that
+exact app in **System Settings → Privacy & Security → Accessibility**. The
+permission persists across subsequent rebuilds when the bundle is signed with
+a real code-signing identity. With the ad-hoc fallback, grant it only after the
+final rebuild because macOS associates the permission with that exact binary.

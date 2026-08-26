@@ -12,11 +12,22 @@ Menu-bar clipboard manager for macOS.
 For setup instructions, command-line and Xcode workflows, verification, and
 troubleshooting, see [Running Multiclipboard](docs/RUNNING.md).
 
-The quickest way to launch from this directory is:
+To run the app with a persistent Accessibility permission (needed for automatic
+paste-back), build and launch its app bundle:
 
 ```bash
-swift run
+./Scripts/make_app.sh
+open Multiclipboard.app
 ```
+
+`swift run` is useful during development, but it launches a bare executable
+whose Accessibility grant cannot be retained by macOS.
+
+`make_app.sh` automatically uses an installed code-signing identity so the
+grant survives rebuilds. On a machine without one, it falls back to ad-hoc
+signing and prints a warning; macOS ties that grant to the current binary, so
+it must be granted again after rebuilding. Set `MULTICLIP_SIGNING_IDENTITY` to
+choose a specific identity.
 
 The app launches as a menu-bar accessory (no Dock icon) with a status item.
 It polls the system pasteboard every 500 ms and persists text, rich text,
@@ -38,7 +49,14 @@ the floating picker. Keyboard shortcuts inside the panel:
 The panel also closes as soon as it loses key focus. Pasting synthesizes a ⌘V
 keystroke, which needs Accessibility permission
 (System Settings → Privacy & Security → Accessibility). Without it the clip is
-still copied to the pasteboard, it just isn't auto-pasted.
+still copied to the pasteboard, it just isn't auto-pasted. If permission is
+missing or has become stale, the app explains how to restore it and can open
+the correct System Settings pane directly.
+
+Entries are ordered newest-first within pinned and unpinned groups. Use the pin
+button on a row to protect important entries, and choose whether pins appear at
+the top or bottom in Settings. Rows and the context menu include Delete, while
+the picker toolbar includes a confirmed Remove All action.
 
 ## Dependencies
 

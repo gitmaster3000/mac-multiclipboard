@@ -23,6 +23,14 @@ final class ClipPickerPanelController: NSObject, NSWindowDelegate {
         panel?.isVisible == true
     }
 
+    func historyDidChange() {
+        viewModel.reload()
+    }
+
+    func setDeleteAllHandler(_ handler: @escaping () -> Void) {
+        viewModel.onDeleteAll = handler
+    }
+
     func toggle() {
         isVisible ? hide() : show()
     }
