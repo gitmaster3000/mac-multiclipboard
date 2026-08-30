@@ -19,7 +19,7 @@ final class PasteboardExtractorTests: XCTestCase {
         let clip = PasteboardExtractor.extract(from: pasteboard)
 
         XCTAssertEqual(clip?.kind, .text)
-        XCTAssertEqual(clip?.preview, "first line second line")
+        XCTAssertEqual(clip?.preview, "first line\nsecond line")
         XCTAssertEqual(clip?.data, Data("first line\nsecond line".utf8))
     }
 
@@ -59,8 +59,51 @@ final class PasteboardExtractorTests: XCTestCase {
         let clip = PasteboardExtractor.extract(from: pasteboard)
 
         XCTAssertEqual(clip?.kind, .image)
-        XCTAssertEqual(clip?.preview, "Image 2×3")
+        XCTAssertEqual(clip?.preview, "Screenshot / image 2×3")
         XCTAssertEqual(clip?.data, png)
+        XCTAssertEqual(PasteboardExtractor.imagePasteboardType(for: png), .png)
+    }
+
+    func testExtractsMacOSScreenshotStyleTIFF() throws {
+        let image = NSImage(size: NSSize(width: 40, height: 24))
+        image.lockFocus()
+        NSColor.systemBlue.setFill()
+        NSRect(x: 0, y: 0, width: 40, height: 24).fill()
+        image.unlockFocus()
+        let tiff = try XCTUnwrap(image.tiffRepresentation)
+        pasteboard.setData(tiff, forType: .tiff)
+
+        let clip = PasteboardExtractor.extract(from: pasteboard)
+
+        XCTAssertEqual(clip?.kind, .image)
+        XCTAssertEqual(clip?.preview, "Screenshot / image 80×48")
+        XCTAssertEqual(clip?.data, tiff)
+        XCTAssertEqual(PasteboardExtractor.imagePasteboardType(for: tiff), .tiff)
+    }
+
+    func testLargeTextPreviewIsBoundedAndPreservesFullPayload() {
+        let text = Array(repeating: "line of text", count: 10_000)
+            .joined(separator: "\n")
+        pasteboard.setString(text, forType: .string)
+
+        let clip = PasteboardExtractor.extract(from: pasteboard)
+
+        XCTAssertEqual(clip?.data, Data(text.utf8))
+        XCTAssertLessThanOrEqual(
+            clip?.preview.count ?? .max,
+            PasteboardExtractor.previewCharacterLimit
+        )
+        XCTAssertTrue(clip?.preview.contains("\n") == true)
+    }
+
+    func testRejectsPathologicallyLargeTextPayload() {
+        let oversized = Data(
+            repeating: 120,
+            count: PasteboardExtractor.maximumTextBytes + 1
+        )
+        pasteboard.setData(oversized, forType: .string)
+
+        XCTAssertNil(PasteboardExtractor.extract(from: pasteboard))
     }
 
     func testExtractsFileURLs() {
@@ -81,7 +124,8 @@ final class PasteboardExtractorTests: XCTestCase {
     func testSkipsConcealedAndTransientItems() {
         for excludedType in [
             PasteboardExtractor.concealedType,
-            PasteboardExtractor.transientType
+            PasteboardExtractor.transientType,
+            PasteboardExtractor.restoredByMulticlipboardType
         ] {
             pasteboard.clearContents()
             pasteboard.declareTypes([excludedType, .string], owner: nil)

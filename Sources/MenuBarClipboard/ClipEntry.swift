@@ -14,6 +14,7 @@ final class ClipEntry {
     var kind: String
     var preview: String
     @Attribute(.externalStorage) var data: Data
+    var contentFingerprint: String?
     var createdAt: Date
     var pinned: Bool
 
@@ -22,6 +23,7 @@ final class ClipEntry {
         kind: ClipKind,
         preview: String,
         data: Data,
+        contentFingerprint: String? = nil,
         createdAt: Date = Date(),
         pinned: Bool = false
     ) {
@@ -29,6 +31,7 @@ final class ClipEntry {
         self.kind = kind.rawValue
         self.preview = preview
         self.data = data
+        self.contentFingerprint = contentFingerprint
         self.createdAt = createdAt
         self.pinned = pinned
     }

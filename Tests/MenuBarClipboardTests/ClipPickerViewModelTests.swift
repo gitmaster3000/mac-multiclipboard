@@ -86,14 +86,41 @@ final class ClipPickerViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.selectedIndex, 0)
     }
 
+    func testTogglePinMovesEntryToPinnedGroupAndPreservesSelection() throws {
+        let (viewModel, _, _) = try makeViewModel(previews: ["old", "new"])
+        viewModel.reload()
+        viewModel.selectedIndex = 1
+        let selectedID = try XCTUnwrap(viewModel.selectedEntry?.id)
+
+        viewModel.togglePin(try XCTUnwrap(viewModel.selectedEntry))
+
+        XCTAssertTrue(viewModel.entries.first?.pinned == true)
+        XCTAssertEqual(viewModel.selectedEntry?.id, selectedID)
+    }
+
+    func testDeleteAllClearsViewAndStore() throws {
+        let (viewModel, store, _) = try makeViewModel(previews: ["one", "two"])
+        viewModel.reload()
+        var preparedMonitor = false
+        viewModel.onDeleteAll = { preparedMonitor = true }
+
+        viewModel.deleteAll()
+
+        XCTAssertTrue(preparedMonitor)
+        XCTAssertTrue(viewModel.entries.isEmpty)
+        XCTAssertTrue(try store.entries().isEmpty)
+    }
+
     func testPrepareForPresentationResetsTransientState() throws {
         let (viewModel, _, _) = try makeViewModel(previews: ["alpha", "beta"])
         viewModel.reload()
         viewModel.searchText = "beta"
         viewModel.focus = .search
+        let previousPresentationID = viewModel.presentationID
 
         viewModel.prepareForPresentation()
 
+        XCTAssertNotEqual(viewModel.presentationID, previousPresentationID)
         XCTAssertEqual(viewModel.searchText, "")
         XCTAssertEqual(viewModel.selectedIndex, 0)
         XCTAssertEqual(viewModel.focus, .list)

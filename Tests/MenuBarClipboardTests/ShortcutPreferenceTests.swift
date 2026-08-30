@@ -91,6 +91,43 @@ final class ShortcutPreferenceTests: XCTestCase {
         XCTAssertTrue(ShortcutPreference.default.isValid)
     }
 
+    func testScreenshotShortcutDefaultsAndRoundTrips() {
+        XCTAssertEqual(
+            ScreenshotShortcutPreference.default.carbonKeyCode,
+            UInt32(kVK_ANSI_S)
+        )
+        XCTAssertEqual(
+            ScreenshotShortcutPreference.default.carbonModifiers,
+            UInt32(optionKey | shiftKey)
+        )
+
+        let custom = ShortcutPreference(
+            carbonKeyCode: UInt32(kVK_ANSI_K),
+            carbonModifiers: UInt32(controlKey | shiftKey)
+        )
+        ScreenshotShortcutPreference.save(custom, to: defaults)
+
+        XCTAssertEqual(
+            ScreenshotShortcutPreference.load(from: defaults),
+            custom
+        )
+
+        XCTAssertEqual(
+            FullScreenshotShortcutPreference.default.carbonKeyCode,
+            UInt32(kVK_ANSI_3)
+        )
+        XCTAssertEqual(
+            FullScreenshotShortcutPreference.default.carbonModifiers,
+            UInt32(optionKey | shiftKey)
+        )
+
+        FullScreenshotShortcutPreference.save(custom, to: defaults)
+        XCTAssertEqual(
+            FullScreenshotShortcutPreference.load(from: defaults),
+            custom
+        )
+    }
+
     func testDisplayStringOrdersModifiersLikeMacOS() {
         let shortcut = ShortcutPreference(
             carbonKeyCode: UInt32(kVK_ANSI_V),
