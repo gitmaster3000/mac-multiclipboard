@@ -1,5 +1,6 @@
 import AppKit
 import HotKey
+import SwiftUI
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem?
@@ -19,12 +20,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
+        // Create the status item first — on macOS 26 the item must be registered
+        // before setActivationPolicy or it is silently hidden.
+        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+        if let button = item.button {
+            let image = NSImage(systemSymbolName: "doc.on.clipboard", accessibilityDescription: "Multiclipboard")
+            image?.isTemplate = true
+            button.image = image
+        }
+        item.isVisible = true
+        statusItem = item
+
         NSApp.setActivationPolicy(.accessory)
         AppearancePreference.load(from: .standard).apply()
 
         do {
             let historyStore = try ClipboardHistoryStore()
-            setUpPicker(historyStore: historyStore)
+            let promptStore = try PromptStore()
+            setUpPicker(historyStore: historyStore, promptStore: promptStore)
             let monitor = ClipboardMonitor(
                 historyStore: historyStore,
                 onHistoryChange: { [weak self] in
@@ -40,11 +53,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             NSLog("Unable to initialize clipboard history: \(error)")
         }
 
-        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-        if let button = item.button {
-            button.image = NSImage(systemSymbolName: "doc.on.clipboard", accessibilityDescription: "Multiclipboard")
-        }
-
         let menu = NSMenu()
         menu.autoenablesItems = false
         menu.addItem(NSMenuItem(title: "Show Clipboard History", action: #selector(showPicker), keyEquivalent: ""))
@@ -56,9 +64,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             menuItem.target = self
             menuItem.isEnabled = true
         }
-        item.menu = menu
-
-        statusItem = item
+        statusItem?.menu = menu
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -86,12 +92,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @MainActor
-    private func setUpPicker(historyStore: ClipboardHistoryStore) {
+    private func setUpPicker(historyStore: ClipboardHistoryStore, promptStore: PromptStore) {
         let viewModel = ClipPickerViewModel(
             historyStore: historyStore,
             paster: SystemClipPaster()
         )
-        let controller = ClipPickerPanelController(viewModel: viewModel)
+        let promptViewModel = PromptLibraryViewModel(store: promptStore)
+        let controller = ClipPickerPanelController(viewModel: viewModel, promptViewModel: promptViewModel)
         pickerController = controller
 
         applyShortcut(ShortcutPreference.load(from: .standard))
@@ -183,11 +190,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @MainActor
     private func captureScreenshotToClipboard(interactive: Bool = true) {
         let task = Process()
+        let pipe = Pipe()
         task.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
         task.arguments = interactive ? ["-i", "-c"] : ["-c"]
-        task.terminationHandler = { [weak self] _ in
+        task.standardError = pipe
+        task.terminationHandler = { [weak self] t in
+            let output = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
             DispatchQueue.main.async {
-                self?.clipboardMonitor?.poll()
+                if t.terminationStatus != 0 && output.contains("could not create image from display") {
+                    self?.showScreenRecordingPermissionAlert()
+                } else if t.terminationStatus == 0 {
+                    self?.clipboardMonitor?.poll()
+                    self?.showScreenshotSuccessBanner()
+                }
             }
         }
 
@@ -195,6 +210,76 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             try task.run()
         } catch {
             NSLog("Unable to launch macOS screenshot capture: \(error)")
+        }
+    }
+
+    private var toastPanel: NSPanel?
+
+    @MainActor
+    private func showScreenshotSuccessBanner() {
+        // A self-drawn floating toast. UNUserNotificationCenter is unreliable for
+        // an unsigned .accessory app, so we render our own HUD instead.
+        toastPanel?.orderOut(nil)
+
+        let width: CGFloat = 260
+        let height: CGFloat = 60
+        let panel = NSPanel(
+            contentRect: NSRect(x: 0, y: 0, width: width, height: height),
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
+        panel.isFloatingPanel = true
+        panel.level = .statusBar
+        panel.backgroundColor = .clear
+        panel.hasShadow = true
+        panel.isOpaque = false
+        panel.ignoresMouseEvents = true
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+
+        let host = NSHostingView(rootView: ScreenshotToastView())
+        host.frame = NSRect(x: 0, y: 0, width: width, height: height)
+        panel.contentView = host
+
+        if let screen = NSScreen.main {
+            let visible = screen.visibleFrame
+            let x = visible.midX - width / 2
+            let y = visible.maxY - height - 24
+            panel.setFrameOrigin(NSPoint(x: x, y: y))
+        }
+
+        panel.alphaValue = 0
+        panel.orderFrontRegardless()
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.18
+            panel.animator().alphaValue = 1
+        }
+        toastPanel = panel
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3.2) { [weak self] in
+            guard let panel = self?.toastPanel else { return }
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0.45
+                panel.animator().alphaValue = 0
+            } completionHandler: {
+                panel.orderOut(nil)
+                if self?.toastPanel === panel { self?.toastPanel = nil }
+            }
+        }
+    }
+
+    @MainActor
+    private func showScreenRecordingPermissionAlert() {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "Screen Recording Permission Required"
+        alert.informativeText = "Multiclipboard needs Screen Recording access to capture screenshots.\n\nEnable it in System Settings → Privacy & Security → Screen & System Audio Recording."
+        alert.addButton(withTitle: "Open Privacy Settings")
+        alert.addButton(withTitle: "Not Now")
+        NSApp.activate(ignoringOtherApps: true)
+        if alert.runModal() == .alertFirstButtonReturn,
+           let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") {
+            NSWorkspace.shared.open(url)
         }
     }
 
@@ -221,6 +306,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         NSApp.orderFrontStandardAboutPanel(options: [
             .applicationName: "Multiclipboard",
+            .applicationVersion: Bundle.main.object(
+                forInfoDictionaryKey: "CFBundleShortVersionString"
+            ) as? String ?? "1.4.1",
             .credits: credits
         ])
         NSApp.activate(ignoringOtherApps: true)
@@ -228,5 +316,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func quit() {
         NSApp.terminate(nil)
+    }
+}
+
+private struct ScreenshotToastView: View {
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "checkmark.circle.fill")
+                .font(.system(size: 22))
+                .foregroundStyle(.green)
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Screenshot captured")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.primary)
+                Text("Added to clipboard history")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 14)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14)
+                .stroke(Color(nsColor: .separatorColor), lineWidth: 0.5)
+        )
     }
 }

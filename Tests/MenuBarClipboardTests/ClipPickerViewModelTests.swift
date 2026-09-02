@@ -122,7 +122,8 @@ final class ClipPickerViewModelTests: XCTestCase {
 
         XCTAssertNotEqual(viewModel.presentationID, previousPresentationID)
         XCTAssertEqual(viewModel.searchText, "")
-        XCTAssertEqual(viewModel.selectedIndex, 0)
+        // Opens with no row highlighted until the user navigates.
+        XCTAssertEqual(viewModel.selectedIndex, -1)
         XCTAssertEqual(viewModel.focus, .list)
         XCTAssertEqual(viewModel.filteredEntries.count, 2)
     }

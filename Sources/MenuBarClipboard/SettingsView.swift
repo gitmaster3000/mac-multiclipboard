@@ -179,6 +179,35 @@ struct SettingsView: View {
 
             Divider()
 
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Keep history for")
+                    .font(.system(size: 13, weight: .semibold))
+                RetentionRow(label: "Text & Rich Text", current: viewModel.retention.text) { d in
+                    viewModel.retention.text = d
+                    viewModel.saveRetention()
+                }
+                RetentionRow(label: "Images", current: viewModel.retention.images) { d in
+                    viewModel.retention.images = d
+                    viewModel.saveRetention()
+                }
+                RetentionRow(label: "Files & URLs", current: viewModel.retention.files) { d in
+                    viewModel.retention.files = d
+                    viewModel.saveRetention()
+                }
+            }
+
+            Divider()
+
+            Toggle(
+                "Enable Prompt Library",
+                isOn: Binding(
+                    get: { viewModel.promptLibraryEnabled },
+                    set: { viewModel.setPromptLibraryEnabled($0) }
+                )
+            )
+
+            Divider()
+
             HStack {
                 Text("Appearance")
                 Spacer()
@@ -293,6 +322,72 @@ private struct LaunchAtLoginSettings: View {
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+}
+
+private struct RetentionRow: View {
+    let label: String
+    let current: RetentionDuration
+    let onSet: (RetentionDuration) -> Void
+
+    @State private var isForever: Bool
+    @State private var value: Int
+    @State private var unit: RetentionUnit
+
+    init(label: String, current: RetentionDuration, onSet: @escaping (RetentionDuration) -> Void) {
+        self.label = label
+        self.current = current
+        self.onSet = onSet
+        _isForever = State(initialValue: current.isForever)
+        _value = State(initialValue: current.isForever ? 7 : current.value)
+        _unit = State(initialValue: current.unit)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(label)
+                .font(.system(size: 12, weight: .medium))
+
+            HStack(spacing: 6) {
+                Toggle("Forever", isOn: $isForever)
+                    .toggleStyle(.checkbox)
+                    .font(.system(size: 12))
+                    .onChange(of: isForever) { _, forever in
+                        if forever {
+                            onSet(.forever)
+                        } else {
+                            onSet(RetentionDuration(value: value, unit: unit))
+                        }
+                    }
+
+                if !isForever {
+                    Divider().frame(height: 16)
+
+                    Stepper(value: $value, in: 1...(unit == .hours ? 720 : 365)) {
+                        Text("\(value)")
+                            .font(.system(size: 12, design: .monospaced))
+                            .frame(width: 32, alignment: .trailing)
+                    }
+                    .onChange(of: value) { _, v in
+                        onSet(RetentionDuration(value: v, unit: unit))
+                    }
+
+                    Picker("", selection: $unit) {
+                        ForEach(RetentionUnit.allCases) { u in
+                            Text(u.label).tag(u)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .frame(width: 110)
+                    .onChange(of: unit) { _, u in
+                        let clamped = RetentionDuration.clamp(value: value, unit: u)
+                        value = clamped
+                        onSet(RetentionDuration(value: clamped, unit: u))
+                    }
+                }
             }
         }
     }

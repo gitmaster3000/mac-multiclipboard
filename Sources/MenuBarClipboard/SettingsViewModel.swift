@@ -20,6 +20,8 @@ final class SettingsViewModel: ObservableObject {
     @Published private(set) var fullScreenshotShortcutMessage: String?
     @Published private(set) var pinPosition: PinPositionPreference
     @Published private(set) var appearance: AppearancePreference
+    @Published var retention: HistoryRetentionPreference
+    @Published private(set) var promptLibraryEnabled: Bool
     @Published private(set) var status: Status = .idle
     let launchAtLogin = LaunchAtLoginManager()
 
@@ -57,6 +59,8 @@ final class SettingsViewModel: ObservableObject {
         )
         pinPosition = PinPositionPreference.load(from: defaults)
         appearance = AppearancePreference.load(from: defaults)
+        retention = HistoryRetentionPreference.load(from: defaults)
+        promptLibraryEnabled = defaults.object(forKey: "promptLibraryEnabled") as? Bool ?? true
     }
 
     /// A combo was captured. Register it on a probe and wait for the user to
@@ -158,6 +162,15 @@ final class SettingsViewModel: ObservableObject {
         self.appearance = appearance
         appearance.save(to: defaults)
         appearance.apply()
+    }
+
+    func saveRetention() {
+        retention.save(to: defaults)
+    }
+
+    func setPromptLibraryEnabled(_ enabled: Bool) {
+        promptLibraryEnabled = enabled
+        defaults.set(enabled, forKey: "promptLibraryEnabled")
     }
 
     func stop() {

@@ -1,4 +1,5 @@
 import Foundation
+import ImageIO
 import SwiftUI
 
 @MainActor
@@ -13,10 +14,16 @@ final class ClipPickerViewModel: ObservableObject {
 
     var onDismiss: () -> Void = {}
     var onDeleteAll: () -> Void = {}
+    var onPreviewImage: (Data) -> Void = { _ in }
+    var onHidePreview: () -> Void = {}
 
     private let historyStore: ClipboardHistoryStore
     private let paster: ClipPasting
     private let defaults: UserDefaults
+
+    var promptLibraryEnabled: Bool {
+        defaults.object(forKey: "promptLibraryEnabled") as? Bool ?? true
+    }
 
     init(
         historyStore: ClipboardHistoryStore,
@@ -55,7 +62,9 @@ final class ClipPickerViewModel: ObservableObject {
     func prepareForPresentation() {
         presentationID = UUID()
         searchText = ""
-        selectedIndex = 0
+        // -1 leaves no row highlighted until the user navigates with the arrow
+        // keys, so the picker does not open with the first row pre-selected.
+        selectedIndex = -1
         focus = .list
         reload()
     }
@@ -112,6 +121,50 @@ final class ClipPickerViewModel: ObservableObject {
         let selectedID = selectedEntry?.id
         try? historyStore.setPinned(!entry.pinned, for: entry)
         reload(selecting: selectedID)
+    }
+
+    /// Sets or clears a clip's custom name. Empty/whitespace clears it (nil),
+    /// so the row falls back to showing the preview. Renaming is a mouse-driven
+    /// edit, so it does not move the keyboard-selection highlight onto the row.
+    func rename(_ entry: ClipEntry, to name: String?) {
+        let trimmed = name?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalized = (trimmed?.isEmpty ?? true) ? nil : trimmed
+        try? historyStore.setName(normalized, for: entry)
+        reloadClearingSelection()
+    }
+
+    /// Replaces the text body of a text/rtf clip. Like rename, this is a
+    /// mouse-driven edit and does not leave the row selection-highlighted.
+    func editText(_ entry: ClipEntry, to text: String) {
+        try? historyStore.setText(text, for: entry)
+        reloadClearingSelection()
+    }
+
+    func saveImageToDownloads(_ entry: ClipEntry) {
+        guard entry.clipKind == .image else { return }
+        guard let dir = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first else { return }
+        let ext: String
+        if let source = CGImageSourceCreateWithData(entry.data as CFData, nil),
+           let type = CGImageSourceGetType(source) as? String {
+            if type.contains("png") { ext = "png" }
+            else if type.contains("jpeg") || type.contains("jpg") { ext = "jpg" }
+            else { ext = "png" }
+        } else { ext = "png" }
+        let fileName = "clipboard-\(Int(entry.createdAt.timeIntervalSince1970)).\(ext)"
+        try? entry.data.write(to: dir.appendingPathComponent(fileName))
+    }
+
+    /// Reloads entries and clears the selection highlight so no row appears
+    /// keyboard-focused. Used after mouse-driven edits (rename, text edit).
+    private func reloadClearingSelection() {
+        entries = (
+            try? historyStore.entries(
+                pinPosition: PinPositionPreference.load(from: defaults)
+            )
+        ) ?? []
+        // -1 matches no row, so the blue selection highlight is removed until
+        // the next keyboard navigation or click.
+        selectedIndex = -1
     }
 
     private func reload(selecting entryID: UUID?) {

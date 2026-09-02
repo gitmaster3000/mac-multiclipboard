@@ -3,7 +3,7 @@ import SwiftUI
 
 @MainActor
 final class SettingsWindowController: NSObject, NSWindowDelegate {
-    private let viewModel: SettingsViewModel
+    let viewModel: SettingsViewModel
     private var window: NSWindow?
 
     init(viewModel: SettingsViewModel) {
