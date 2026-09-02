@@ -173,8 +173,8 @@ struct ClipPickerView: View {
                     Text(tab.rawValue)
                         .font(.system(size: 12, weight: activeTab == tab ? .semibold : .regular))
                         .foregroundStyle(activeTab == tab ? Color.accentColor : Color(nsColor: .secondaryLabelColor))
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 8)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .contentShape(Rectangle())
                         .overlay(alignment: .bottom) {
                             if activeTab == tab {
                                 Rectangle()
@@ -184,6 +184,7 @@ struct ClipPickerView: View {
                         }
                 }
                 .buttonStyle(.plain)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
         .frame(height: 34)
