@@ -68,6 +68,9 @@ final class ClipboardMonitor {
         } catch {
             NSLog("Unable to persist clipboard entry: \(error)")
         }
+
+        let retention = HistoryRetentionPreference.load()
+        try? historyStore.evictExpiredEntries(retention: retention)
     }
 
     deinit {

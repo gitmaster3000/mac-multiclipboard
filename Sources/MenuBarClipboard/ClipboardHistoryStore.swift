@@ -89,8 +89,56 @@ final class ClipboardHistoryStore {
         try modelContext.save()
     }
 
+    func evictExpiredEntries(retention: HistoryRetentionPreference) throws {
+        var didDelete = false
+        let kindMap: [(ClipKind, RetentionDuration)] = [
+            (.text, retention.text),
+            (.rtf, retention.text),
+            (.image, retention.images),
+            (.fileURL, retention.files)
+        ]
+        for (kind, duration) in kindMap {
+            guard let maxAge = duration.maxAge else { continue }
+            let cutoff = Date().addingTimeInterval(-maxAge)
+            let kindStr = kind.rawValue
+            let descriptor = FetchDescriptor<ClipEntry>(
+                predicate: #Predicate { $0.kind == kindStr && !$0.pinned && $0.createdAt < cutoff }
+            )
+            let expired = try modelContext.fetch(descriptor)
+            guard !expired.isEmpty else { continue }
+            expired.forEach(modelContext.delete)
+            didDelete = true
+        }
+        if didDelete { try modelContext.save() }
+    }
+
     func setPinned(_ pinned: Bool, for entry: ClipEntry) throws {
         entry.pinned = pinned
+        try modelContext.save()
+    }
+
+    func setName(_ name: String?, for entry: ClipEntry) throws {
+        entry.name = name
+        try modelContext.save()
+    }
+
+    /// Replaces the text of a plain-text or rich-text clip. Rich text is
+    /// demoted to plain text since the edit surface is plain, and both the
+    /// stored bytes and the preview are refreshed so paste and the row title
+    /// reflect the new content. The fingerprint is recomputed so future
+    /// captures deduplicate against the edited text, not the original.
+    func setText(_ text: String, for entry: ClipEntry) throws {
+        guard entry.clipKind == .text || entry.clipKind == .rtf else { return }
+        let data = Data(text.utf8)
+        entry.kind = ClipKind.text.rawValue
+        entry.preview = text
+        entry.data = data
+        entry.contentFingerprint = Self.contentFingerprint(
+            kind: .text,
+            preview: text,
+            data: data,
+            deduplicationData: nil
+        )
         try modelContext.save()
     }
 

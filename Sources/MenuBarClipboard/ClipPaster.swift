@@ -1,4 +1,5 @@
 import AppKit
+import ImageIO
 
 @MainActor
 protocol ClipPasting {
@@ -28,20 +29,31 @@ struct SystemClipPaster: ClipPasting {
         // instead of leaving the user to guess.
         guard Self.ensureAccessibility() else { return }
 
-        Self.postPasteWhenTargetIsReady()
+        Self.postPasteWhenReady()
     }
 
     /// Returns whether the app may post events, prompting for the permission
     /// the first time it may not.
+    ///
+    /// We deliberately gate on `AXIsProcessTrusted()` — the classic
+    /// Accessibility grant shown in Privacy & Security → Accessibility — rather
+    /// than `CGPreflightPostEventAccess()`. The CoreGraphics post-event API
+    /// checks a separate PostEvent grant whose ad-hoc designated requirement is
+    /// cdhash-based; every rebuild invalidates it and toggling the Accessibility
+    /// switch never satisfies it, so the app prompts on a loop. The AX grant is
+    /// the one the user actually toggles, and holding it is sufficient to post a
+    /// synthetic ⌘V via `.cghidEventTap`.
     @discardableResult
     static func ensureAccessibility() -> Bool {
-        if CGPreflightPostEventAccess() { return true }
+        if AXIsProcessTrusted() { return true }
 
-        // This registers the app with macOS and presents the system permission
-        // request when the OS still permits one. A prior denial or stale TCC
-        // entry can make it return false without showing useful guidance, so
-        // provide an in-app recovery path as well.
-        if CGRequestPostEventAccess() { return true }
+        // Presents the system permission request and registers the app in the
+        // Accessibility list. Returns immediately; the user grants asynchronously.
+        let options = [
+            kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true
+        ] as CFDictionary
+        if AXIsProcessTrustedWithOptions(options) { return true }
+
         showAccessibilityHelp()
         return false
     }
@@ -88,10 +100,18 @@ struct SystemClipPaster: ClipPasting {
         case .rtf:
             pasteboard.setData(entry.data, forType: .rtf)
         case .image:
-            pasteboard.setData(
-                entry.data,
-                forType: PasteboardExtractor.imagePasteboardType(for: entry.data)
-            )
+            // Finder can't accept raw image bytes on ⌘V — it only pastes files.
+            // When Finder is frontmost, drop the image to a temp file and put the
+            // file URL on the pasteboard so ⌘V materializes an actual image file.
+            if Self.frontmostAppIsFinder(),
+               let fileURL = Self.writeTemporaryImageFile(entry.data, baseName: entry.displayName) {
+                pasteboard.writeObjects([fileURL as NSURL])
+            } else {
+                pasteboard.setData(
+                    entry.data,
+                    forType: PasteboardExtractor.imagePasteboardType(for: entry.data)
+                )
+            }
         case .fileURL:
             let urls = String(decoding: entry.data, as: UTF8.self)
                 .split(whereSeparator: \.isNewline)
@@ -110,9 +130,51 @@ struct SystemClipPaster: ClipPasting {
         )
     }
 
+    /// Whether the app that will receive the synthetic ⌘V is Finder. The picker
+    /// is a non-activating panel, so the frontmost app is still the target the
+    /// user was in when they opened the picker.
+    private static func frontmostAppIsFinder() -> Bool {
+        NSWorkspace.shared.frontmostApplication?.bundleIdentifier == "com.apple.finder"
+    }
+
+    /// Writes image data to a temp file and returns its URL, so a paste into
+    /// Finder produces a real image file rather than dropping nothing. The file
+    /// is named after the clip's custom name when present, else a default.
+    private static func writeTemporaryImageFile(_ data: Data, baseName: String?) -> URL? {
+        let ext: String
+        if let source = CGImageSourceCreateWithData(data as CFData, nil),
+           let type = CGImageSourceGetType(source) as? String {
+            if type.contains("png") { ext = "png" }
+            else if type.contains("jpeg") || type.contains("jpg") { ext = "jpg" }
+            else { ext = "png" }
+        } else {
+            ext = "png"
+        }
+        let fileName = sanitizedFileName(baseName) ?? "Clipboard image"
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("\(fileName).\(ext)")
+        do {
+            try data.write(to: url)
+            return url
+        } catch {
+            return nil
+        }
+    }
+
+    /// Makes a filesystem-safe file name from a user label, or nil if the label
+    /// is empty after stripping path-hostile characters.
+    private static func sanitizedFileName(_ raw: String?) -> String? {
+        guard let raw else { return nil }
+        let cleaned = raw
+            .components(separatedBy: CharacterSet(charactersIn: "/:\\"))
+            .joined(separator: "-")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return cleaned.isEmpty ? nil : String(cleaned.prefix(200))
+    }
+
     /// Synthesizes ⌘V. Requires the Accessibility permission; without it the
     /// events are silently dropped and the clip is still on the pasteboard.
-    private static func postPasteWhenTargetIsReady(poll: Int = 0) {
+    static func postPasteWhenReady(poll: Int = 0) {
         let currentProcessID = ProcessInfo.processInfo.processIdentifier
         let frontmostProcessID = NSWorkspace.shared.frontmostApplication?
             .processIdentifier
@@ -128,7 +190,7 @@ struct SystemClipPaster: ClipPasting {
         }
 
         DispatchQueue.main.asyncAfter(deadline: .now() + focusPollInterval) {
-            postPasteWhenTargetIsReady(poll: poll + 1)
+            postPasteWhenReady(poll: poll + 1)
         }
     }
 

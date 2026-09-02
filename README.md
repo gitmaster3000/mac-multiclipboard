@@ -65,6 +65,49 @@ button on a row to protect important entries, and choose whether pins appear at
 the top or bottom in Settings. Rows and the context menu include Delete, while
 the picker toolbar includes a confirmed Remove All action.
 
+## Clip actions
+
+Each row's context menu and its *More* menu expose per-clip actions:
+
+- **Rename / Edit Name** — give a clip a custom title. For images pasted into
+  Finder, the title becomes the file name.
+- **View / Edit Text** — open a text clip in an editable overlay.
+- **Save Image to Downloads** — write an image clip to your Downloads folder.
+- **Save as Prompt** — promote a text clip into the Prompt Library.
+- **Share** — send a clip through the macOS share sheet.
+
+Pasting an image while Finder is frontmost drops it to a temporary file and
+puts that file on the pasteboard, so ⌘V materializes a real image file rather
+than nothing.
+
+## Prompt Library
+
+Enable the Prompt Library in Settings to add a second tab to the picker for
+reusable text snippets. Add, edit, delete, and search prompts, then paste one
+the same way you paste a clip.
+
+## Screenshot shortcuts
+
+Configure shortcuts in Settings that open Apple's area selector — or capture the
+full screen — and copy the result straight into clipboard history, ready to
+paste from the picker.
+
+## History retention
+
+Set how long text and rich text, images, and files are kept before they are
+automatically evicted. Each type has its own retention duration, configured in
+Settings. Pinned entries are never evicted.
+
+## Appearance and launch
+
+Choose a System, Light, or Dark appearance, decide whether pinned entries sit at
+the top or bottom of the list, and enable Launch at Login so Multiclipboard
+starts with your session — all in Settings.
+
 ## Dependencies
 
 - [HotKey](https://github.com/soffes/HotKey) — global keyboard shortcut registration, wired via SwiftPM.
+
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md) for release notes.
