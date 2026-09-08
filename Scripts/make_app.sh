@@ -10,8 +10,8 @@ set -euo pipefail
 CONFIGURATION="${1:-debug}"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 APP="$REPO_ROOT/Multiclipboard.app"
-APP_VERSION="${MULTICLIP_VERSION:-1.4.1}"
-BUILD_NUMBER="${MULTICLIP_BUILD_NUMBER:-5}"
+APP_VERSION="${MULTICLIP_VERSION:-1.4.2}"
+BUILD_NUMBER="${MULTICLIP_BUILD_NUMBER:-6}"
 
 # A real signing identity gives TCC a stable designated requirement, allowing
 # Accessibility permission to survive rebuilds. CI and developers can select a
