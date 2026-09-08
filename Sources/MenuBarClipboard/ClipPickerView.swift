@@ -173,7 +173,7 @@ struct ClipPickerView: View {
                     Text(tab.rawValue)
                         .font(.system(size: 12, weight: activeTab == tab ? .semibold : .regular))
                         .foregroundStyle(activeTab == tab ? Color.accentColor : Color(nsColor: .secondaryLabelColor))
-                        .frame(maxWidth: .infinity)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .padding(.vertical, 8)
                         .overlay(alignment: .bottom) {
                             if activeTab == tab {
@@ -182,6 +182,8 @@ struct ClipPickerView: View {
                                     .frame(height: 2)
                             }
                         }
+                        // Make the whole tab area clickable, not just the glyphs.
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
             }

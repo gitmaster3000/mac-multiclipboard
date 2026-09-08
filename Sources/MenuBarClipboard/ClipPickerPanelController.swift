@@ -86,21 +86,42 @@ final class ClipPickerPanelController: NSObject, NSWindowDelegate {
 
     // MARK: - Image preview
 
-    /// Shows the image beside the picker in a panel that never takes key focus,
-    /// sized to roughly a quarter of the screen while respecting aspect ratio.
+    /// Shows the image beside the picker in a panel that never takes key focus.
+    ///
+    /// The preview is sized to half the image's native pixel dimensions. On a
+    /// Retina 2x screenshot that lands near its logical size — sharp, never
+    /// upscaled, so small clippings don't pixelate. A screen-relative cap keeps
+    /// very large captures from overflowing, and a small floor keeps tiny clips
+    /// visible.
     private func showPreview(_ data: Data) {
         guard let image = NSImage(data: data), let panel else { return }
 
         let screen = panel.screen ?? NSScreen.main
         let visible = screen?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
 
-        let targetArea = (visible.width * visible.height) / 4
-        let imgSize = image.size
-        let aspect = imgSize.width > 0 ? imgSize.width / max(imgSize.height, 1) : 1
-        var height = (targetArea / aspect).squareRoot()
-        var width = height * aspect
-        width = min(width, visible.width * 0.9)
-        height = min(height, visible.height * 0.9)
+        // NSImage.size is in points; use the bitmap's true pixel dimensions so
+        // the sizing reflects the actual resolution the user captured.
+        let nativeSize = Self.pixelSize(of: image) ?? image.size
+        let aspect = nativeSize.width > 0 ? nativeSize.width / max(nativeSize.height, 1) : 1
+
+        var width = nativeSize.width / 2
+        var height = nativeSize.height / 2
+
+        // Cap large captures at 90% of the screen, preserving aspect ratio.
+        let maxWidth = visible.width * 0.9
+        let maxHeight = visible.height * 0.9
+        if width > maxWidth || height > maxHeight {
+            let scale = min(maxWidth / width, maxHeight / height)
+            width *= scale
+            height *= scale
+        }
+
+        // Floor so a very small clip is still readable.
+        let minWidth: CGFloat = 160
+        if width < minWidth {
+            width = minWidth
+            height = width / aspect
+        }
 
         let preview = previewPanel ?? makePreviewPanel()
         previewPanel = preview
@@ -123,6 +144,20 @@ final class ClipPickerPanelController: NSObject, NSWindowDelegate {
 
     private func hidePreview() {
         previewPanel?.orderOut(nil)
+    }
+
+    /// The image's true bitmap dimensions in pixels, or nil if it has no bitmap
+    /// representation. NSImage.size reports points, which for a Retina capture
+    /// is half the pixels — using that would cap the preview too aggressively.
+    private static func pixelSize(of image: NSImage) -> NSSize? {
+        var maxWidth = 0
+        var maxHeight = 0
+        for rep in image.representations {
+            maxWidth = max(maxWidth, rep.pixelsWide)
+            maxHeight = max(maxHeight, rep.pixelsHigh)
+        }
+        guard maxWidth > 0, maxHeight > 0 else { return nil }
+        return NSSize(width: maxWidth, height: maxHeight)
     }
 
     private func makePreviewPanel() -> ImagePreviewPanel {
