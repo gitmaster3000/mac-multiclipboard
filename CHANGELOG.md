@@ -4,6 +4,21 @@ All notable changes to Multiclipboard are documented here. The format is based
 on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 uses semantic versioning.
 
+## [1.4.2]
+
+### Changed
+
+- The image preview panel now sizes to half the screenshot's native pixel
+  dimensions instead of a fixed fraction of the screen. Small clippings are no
+  longer upscaled — they are shown sharp and at a sensible size rather than
+  blown up and pixelated. Large captures still cap at 90% of the screen, and a
+  160px floor keeps very small clips readable.
+
+### Fixed
+
+- Picker tabs now switch when you click anywhere in the tab area, not only on
+  the label text.
+
 ## [1.4.1]
 
 ### Fixed
