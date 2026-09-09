@@ -848,10 +848,8 @@ private struct NameEditSheet: View {
             Text("Name")
                 .font(.system(size: 13, weight: .semibold))
 
-            TextField(placeholder, text: $name)
-                .textFieldStyle(.roundedBorder)
-                .font(.system(size: 13))
-                .onSubmit(save)
+            EditableNameField(text: $name, placeholder: placeholder, onSubmit: save)
+                .frame(height: 22)
 
             HStack {
                 Spacer()
@@ -878,6 +876,68 @@ private struct NameEditSheet: View {
     private func save() {
         onSave(name)
         onDismiss()
+    }
+}
+
+/// A single-line text field for renaming. Unlike SwiftUI's `TextField`, it
+/// focuses itself with the insertion point at the end of the existing text
+/// (no select-all), so the first keystroke edits the current name instead of
+/// wiping it.
+private struct EditableNameField: NSViewRepresentable {
+    @Binding var text: String
+    let placeholder: String
+    var onSubmit: () -> Void = {}
+
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+
+    func makeNSView(context: Context) -> NSTextField {
+        let field = NSTextField(string: text)
+        field.placeholderString = placeholder
+        field.font = .systemFont(ofSize: 13)
+        field.bezelStyle = .roundedBezel
+        field.isBezeled = true
+        field.focusRingType = .default
+        field.delegate = context.coordinator
+        field.lineBreakMode = .byTruncatingTail
+        // Defer focus until the field is in the window, then place the cursor
+        // at the end without selecting the existing text.
+        DispatchQueue.main.async {
+            guard let window = field.window else { return }
+            window.makeFirstResponder(field)
+            field.currentEditor()?.selectedRange = NSRange(location: text.count, length: 0)
+        }
+        return field
+    }
+
+    func updateNSView(_ nsView: NSTextField, context: Context) {
+        if nsView.stringValue != text {
+            nsView.stringValue = text
+        }
+    }
+
+    final class Coordinator: NSObject, NSTextFieldDelegate {
+        private let parent: EditableNameField
+
+        init(_ parent: EditableNameField) {
+            self.parent = parent
+        }
+
+        func controlTextDidChange(_ obj: Notification) {
+            guard let field = obj.object as? NSTextField else { return }
+            parent.text = field.stringValue
+        }
+
+        func control(
+            _ control: NSControl,
+            textView: NSTextView,
+            doCommandBy selector: Selector
+        ) -> Bool {
+            if selector == #selector(NSResponder.insertNewline(_:)) {
+                parent.onSubmit()
+                return true
+            }
+            return false
+        }
     }
 }
 
