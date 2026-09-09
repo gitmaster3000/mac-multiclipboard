@@ -213,6 +213,9 @@ final class ClipPickerPanelController: NSObject, NSWindowDelegate {
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) {
             [weak self] event in
             guard let self, self.isVisible else { return event }
+            // If a text field is being edited (e.g. rename), let the event
+            // reach the field unchanged so backspace/typing work correctly.
+            if self.panel?.firstResponder is NSTextView { return event }
             guard let command = PickerCommand.from(
                 keyCode: event.keyCode,
                 modifiers: event.modifierFlags,
