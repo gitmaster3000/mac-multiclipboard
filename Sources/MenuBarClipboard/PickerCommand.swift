@@ -5,6 +5,8 @@ import AppKit
 enum PickerFocus {
     case list
     case search
+    /// An inline edit overlay (clip text, rename, prompt) owns the keyboard.
+    case editing
 }
 
 enum PickerCommand: Equatable {
@@ -29,6 +31,9 @@ enum PickerCommand: Equatable {
         modifiers: NSEvent.ModifierFlags,
         focus: PickerFocus
     ) -> PickerCommand? {
+        // Overlay text fields need every key, Backspace and Return included.
+        if focus == .editing { return nil }
+
         let command = modifiers.contains(.command)
 
         switch keyCode {
