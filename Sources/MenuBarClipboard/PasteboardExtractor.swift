@@ -35,14 +35,16 @@ enum PasteboardExtractor {
     )
     static let jpegType = NSPasteboard.PasteboardType("public.jpeg")
 
-    static func extract(from pasteboard: NSPasteboard) -> CapturedClip? {
+    /// Whether the pasteboard asks not to be recorded, or was restored by us.
+    static func isExcludedFromHistory(_ pasteboard: NSPasteboard) -> Bool {
         let types = Set(pasteboard.types ?? [])
-        guard !types.contains(concealedType),
-              !types.contains(transientType),
-              !types.contains(restoredByMulticlipboardType)
-        else {
-            return nil
-        }
+        return types.contains(concealedType)
+            || types.contains(transientType)
+            || types.contains(restoredByMulticlipboardType)
+    }
+
+    static func extract(from pasteboard: NSPasteboard) -> CapturedClip? {
+        guard !isExcludedFromHistory(pasteboard) else { return nil }
 
         if let files = extractFileURLs(from: pasteboard), !files.isEmpty {
             let encodedURLs = files.map(\.absoluteString).joined(separator: "\n")
@@ -91,7 +93,37 @@ enum PasteboardExtractor {
             )
         }
 
+        if let data = fallbackTextData(from: pasteboard) {
+            return CapturedClip(
+                kind: .text,
+                preview: preview(from: data),
+                data: data,
+                deduplicationData: data
+            )
+        }
+
         return nil
+    }
+
+    /// Text for copies that offer no plain-text flavour, such as link-only and
+    /// HTML-only copy buttons.
+    private static func fallbackTextData(from pasteboard: NSPasteboard) -> Data? {
+        // A present but oversized plain-text payload was rejected on purpose.
+        guard pasteboard.data(forType: .string) == nil else { return nil }
+
+        var text = pasteboard.string(forType: .URL)
+        if text == nil, let html = pasteboard.data(forType: .html),
+           html.count <= maximumTextBytes {
+            text = (try? NSAttributedString(
+                data: html,
+                options: [.documentType: NSAttributedString.DocumentType.html],
+                documentAttributes: nil
+            ))?.string
+        }
+
+        let trimmed = text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let data = Data(trimmed.utf8)
+        return !data.isEmpty && data.count <= maximumTextBytes ? data : nil
     }
 
     private static func extractFileURLs(from pasteboard: NSPasteboard) -> [URL]? {
@@ -137,7 +169,7 @@ enum PasteboardExtractor {
         return CGSize(width: width.doubleValue, height: height.doubleValue)
     }
 
-    private static func preview(from data: Data) -> String {
+    static func preview(from data: Data) -> String {
         // Decode only enough bytes to fill a card. Full data is preserved for
         // paste-back, making preview work constant-time for multi-megabyte text.
         let sample = String(decoding: data.prefix(4_096), as: UTF8.self)

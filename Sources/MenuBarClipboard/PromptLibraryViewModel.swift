@@ -57,7 +57,7 @@ final class PromptLibraryViewModel: ObservableObject {
         pasteboard.clearContents()
         pasteboard.setString(entry.body, forType: .string)
         pasteboard.setString(UUID().uuidString, forType: PasteboardExtractor.restoredByMulticlipboardType)
-        SystemClipPaster.ensureAccessibility()
+        guard SystemClipPaster.ensureAccessibility() else { return }
         SystemClipPaster.postPasteWhenReady()
     }
 

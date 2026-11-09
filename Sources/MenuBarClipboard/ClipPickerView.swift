@@ -79,7 +79,7 @@ struct ClipPickerView: View {
             if let entry = editingClip {
                 clipTextEditOverlay(
                     name: entry.name ?? "",
-                    text: entry.preview,
+                    text: entry.fullText,
                     placeholder: entry.preview,
                     onSave: { newName, newText in
                         viewModel.editText(entry, to: newText)
@@ -95,23 +95,34 @@ struct ClipPickerView: View {
         .onChange(of: searchFieldFocused) { _, isFocused in
             // An open overlay owns the keyboard; its fields stealing focus
             // from the search box must not flip us back to list mode.
-            guard viewModel.focus != .editing else { return }
+            guard viewModel.focus == .list || viewModel.focus == .search else { return }
             viewModel.focus = isFocused ? .search : .list
         }
-        .onChange(of: isEditingOverlayOpen) { _, open in
-            viewModel.focus = open ? .editing : .list
+        .onChange(of: isEditingOverlayOpen) { _, _ in
+            viewModel.focus = surfaceFocus
+        }
+        .onChange(of: activeTab) { _, _ in
+            viewModel.focus = surfaceFocus
         }
         .onChange(of: viewModel.presentationID) {
             isConfirmingRemoveAll = false
             activeTab = .history
             renamingClip = nil
             editingClip = nil
+            showingAddPrompt = false
+            editingPrompt = nil
         }
         .onChange(of: editingPrompt) { _, _ in }
     }
 
     private var isEditingOverlayOpen: Bool {
         showingAddPrompt || editingPrompt != nil || renamingClip != nil || editingClip != nil
+    }
+
+    /// Which surface should receive keys, given what is currently on screen.
+    private var surfaceFocus: PickerFocus {
+        if isEditingOverlayOpen { return .editing }
+        return activeTab == .prompts ? .prompts : .list
     }
 
     @ViewBuilder
@@ -208,6 +219,7 @@ struct ClipPickerView: View {
     private var historyContent: some View {
         VStack(spacing: 0) {
             searchField
+            categoryBar
             if isConfirmingRemoveAll {
                 removeAllConfirmation
                 Divider()
@@ -254,6 +266,45 @@ struct ClipPickerView: View {
         .frame(height: 46)
     }
 
+    private var categoryBar: some View {
+        HStack(spacing: 2) {
+            ForEach(ClipCategory.allCases) { category in
+                let isActive = viewModel.categoryFilter == category
+                Button {
+                    viewModel.categoryFilter = category
+                } label: {
+                    Text(category.rawValue)
+                        .font(.system(size: 11, weight: isActive ? .semibold : .regular))
+                        .foregroundStyle(isActive ? Color.accentColor : Color(nsColor: .secondaryLabelColor))
+                        .lineLimit(1)
+                        .frame(maxWidth: .infinity, minHeight: 24)
+                        .background(
+                            RoundedRectangle(cornerRadius: 5)
+                                .fill(isActive ? Color.accentColor.opacity(0.18) : Color.clear)
+                        )
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(isActive ? .isSelected : [])
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.bottom, 8)
+    }
+
+    private var emptyListMessage: String {
+        if !viewModel.searchText.isEmpty { return "No matches" }
+        switch viewModel.categoryFilter {
+        case .all: return "No clips yet"
+        case .text: return "No text clips"
+        case .links: return "No links"
+        case .images: return "No images"
+        case .video: return "No video files"
+        case .audio: return "No audio files"
+        case .files: return "No files"
+        }
+    }
+
     private var removeAllConfirmation: some View {
         HStack(spacing: 8) {
             Image(systemName: "exclamationmark.triangle.fill")
@@ -285,7 +336,7 @@ struct ClipPickerView: View {
     @ViewBuilder
     private var entryList: some View {
         if viewModel.filteredEntries.isEmpty {
-            Text(viewModel.searchText.isEmpty ? "No clips yet" : "No matches")
+            Text(emptyListMessage)
                 .font(.system(size: 12))
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -508,7 +559,7 @@ struct ClipPickerView: View {
     /// model refreshes its list immediately.
     private func saveClipAsPrompt(_ entry: ClipEntry) {
         guard entry.clipKind == .text || entry.clipKind == .rtf else { return }
-        promptViewModel?.add(title: "", body: entry.preview)
+        promptViewModel?.add(title: "", body: entry.fullText)
         if viewModel.promptLibraryEnabled, promptViewModel != nil {
             activeTab = .prompts
         }
@@ -520,7 +571,7 @@ struct ClipPickerView: View {
         if entry.clipKind == .image, let image = NSImage(data: entry.data) {
             items = [image]
         } else {
-            items = [entry.preview as NSString]
+            items = [entry.fullText as NSString]
         }
         let picker = NSSharingServicePicker(items: items)
         picker.show(relativeTo: .zero, of: contentView, preferredEdge: .minY)
@@ -729,7 +780,12 @@ struct ClipPickerView: View {
         let isURL = preview.hasPrefix("http://") || preview.hasPrefix("https://")
         switch entry.clipKind {
         case .rtf: return "doc.richtext"
-        case .fileURL: return isURL ? "link" : "folder"
+        case .fileURL:
+            switch entry.category {
+            case .video: return "film"
+            case .audio: return "music.note"
+            default: return isURL ? "link" : "folder"
+            }
         case .text: return isURL ? "link" : "text.alignleft"
         case .image: return "photo"
         case nil: return "questionmark"

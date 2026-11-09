@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import SwiftData
 
@@ -44,6 +45,23 @@ final class ClipEntry {
 
     var clipKind: ClipKind? {
         ClipKind(rawValue: kind)
+    }
+
+    /// The clip's complete text. `preview` is capped for display, so anything
+    /// that reads, edits or shares the content must use this instead.
+    var fullText: String {
+        switch clipKind {
+        case .text:
+            return String(decoding: data, as: UTF8.self)
+        case .rtf:
+            return (try? NSAttributedString(
+                data: data,
+                options: [.documentType: NSAttributedString.DocumentType.rtf],
+                documentAttributes: nil
+            ))?.string ?? preview
+        case .image, .fileURL, nil:
+            return preview
+        }
     }
 
     /// What the row shows as its title: the custom name if set, else the preview.

@@ -131,7 +131,7 @@ final class ClipboardHistoryStore {
         guard entry.clipKind == .text || entry.clipKind == .rtf else { return }
         let data = Data(text.utf8)
         entry.kind = ClipKind.text.rawValue
-        entry.preview = text
+        entry.preview = PasteboardExtractor.preview(from: data)
         entry.data = data
         entry.contentFingerprint = Self.contentFingerprint(
             kind: .text,
