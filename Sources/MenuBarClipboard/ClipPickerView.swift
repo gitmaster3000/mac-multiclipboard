@@ -93,7 +93,13 @@ struct ClipPickerView: View {
             searchFieldFocused = focus == .search
         }
         .onChange(of: searchFieldFocused) { _, isFocused in
+            // An open overlay owns the keyboard; its fields stealing focus
+            // from the search box must not flip us back to list mode.
+            guard viewModel.focus != .editing else { return }
             viewModel.focus = isFocused ? .search : .list
+        }
+        .onChange(of: isEditingOverlayOpen) { _, open in
+            viewModel.focus = open ? .editing : .list
         }
         .onChange(of: viewModel.presentationID) {
             isConfirmingRemoveAll = false
@@ -102,6 +108,10 @@ struct ClipPickerView: View {
             editingClip = nil
         }
         .onChange(of: editingPrompt) { _, _ in }
+    }
+
+    private var isEditingOverlayOpen: Bool {
+        showingAddPrompt || editingPrompt != nil || renamingClip != nil || editingClip != nil
     }
 
     @ViewBuilder

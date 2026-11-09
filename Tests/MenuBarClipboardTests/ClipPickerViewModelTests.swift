@@ -137,6 +137,71 @@ final class ClipPickerViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.focus, .search)
     }
 
+    func testBackspaceWhileEditingOverlayDeletesNoClips() throws {
+        let (viewModel, _, _) = try makeViewModel(previews: ["one", "two", "three"])
+        viewModel.reload()
+        viewModel.selectedIndex = 1
+        viewModel.focus = .editing
+
+        // Mirrors the panel's key monitor: route the key, handle if mapped.
+        for _ in 0..<5 {
+            if let command = PickerCommand.from(
+                keyCode: 51, modifiers: [], focus: viewModel.focus
+            ) {
+                viewModel.handle(command)
+            }
+        }
+
+        XCTAssertEqual(viewModel.entries.count, 3)
+    }
+
+    func testBackspaceInListFocusStillDeletesSelectedClip() throws {
+        let (viewModel, _, _) = try makeViewModel(previews: ["one", "two", "three"])
+        viewModel.reload()
+        viewModel.selectedIndex = 0
+
+        let command = PickerCommand.from(keyCode: 51, modifiers: [], focus: viewModel.focus)
+        XCTAssertEqual(command, .deleteSelection)
+        viewModel.handle(try XCTUnwrap(command))
+
+        XCTAssertEqual(viewModel.entries.count, 2)
+    }
+
+    func testEditTextReplacesBodyKeepsEntryCountAndClearsSelection() throws {
+        let (viewModel, store, _) = try makeViewModel(previews: ["one", "two"])
+        viewModel.reload()
+        let entry = try XCTUnwrap(viewModel.entries.first { $0.preview == "one" })
+
+        viewModel.editText(entry, to: "edited body")
+
+        XCTAssertEqual(try store.entries().count, 2)
+        XCTAssertTrue(viewModel.entries.contains { $0.preview == "edited body" })
+        XCTAssertFalse(viewModel.entries.contains { $0.preview == "one" })
+        XCTAssertEqual(viewModel.selectedIndex, -1)
+    }
+
+    func testRenameTrimsAndWhitespaceClearsName() throws {
+        let (viewModel, _, _) = try makeViewModel(previews: ["one"])
+        viewModel.reload()
+        let entry = try XCTUnwrap(viewModel.entries.first)
+
+        viewModel.rename(entry, to: "  Work  ")
+        XCTAssertEqual(viewModel.entries.first?.name, "Work")
+
+        viewModel.rename(try XCTUnwrap(viewModel.entries.first), to: "   ")
+        XCTAssertNil(viewModel.entries.first?.name)
+        XCTAssertEqual(viewModel.entries.count, 1)
+    }
+
+    func testPrepareForPresentationLeavesEditingFocus() throws {
+        let (viewModel, _, _) = try makeViewModel(previews: ["one"])
+        viewModel.focus = .editing
+
+        viewModel.prepareForPresentation()
+
+        XCTAssertEqual(viewModel.focus, .list)
+    }
+
     private func makeViewModel(
         previews: [String]
     ) throws -> (ClipPickerViewModel, ClipboardHistoryStore, SpyPaster) {
@@ -209,6 +274,13 @@ final class PickerCommandTests: XCTestCase {
             PickerCommand.from(keyCode: 51, modifiers: [.command], focus: .search),
             .deleteSelection
         )
+    }
+
+    func testEditingFocusLeavesAllKeysToTextField() {
+        for key: UInt16 in [51, 36, 76, 125, 126] {
+            XCTAssertNil(PickerCommand.from(keyCode: key, modifiers: [], focus: .editing))
+        }
+        XCTAssertNil(PickerCommand.from(keyCode: 51, modifiers: [.command], focus: .editing))
     }
 
     func testUnmappedKeyReturnsNil() {
