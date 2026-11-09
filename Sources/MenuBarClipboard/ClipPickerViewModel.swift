@@ -8,6 +8,10 @@ final class ClipPickerViewModel: ObservableObject {
     @Published var searchText: String = "" {
         didSet { clampSelection() }
     }
+    /// Narrows the list to one type. The rows change, so no highlight carries over.
+    @Published var categoryFilter: ClipCategory = .all {
+        didSet { selectedIndex = -1 }
+    }
     @Published var selectedIndex: Int = 0
     @Published var focus: PickerFocus = .list
     @Published private(set) var presentationID = UUID()
@@ -37,9 +41,9 @@ final class ClipPickerViewModel: ObservableObject {
 
     var filteredEntries: [ClipEntry] {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !query.isEmpty else { return entries }
-        return entries.filter {
-            $0.preview.localizedCaseInsensitiveContains(query)
+        return entries.filter { entry in
+            (categoryFilter == .all || entry.category == categoryFilter)
+                && (query.isEmpty || entry.preview.localizedCaseInsensitiveContains(query))
         }
     }
 
@@ -62,6 +66,7 @@ final class ClipPickerViewModel: ObservableObject {
     func prepareForPresentation() {
         presentationID = UUID()
         searchText = ""
+        categoryFilter = .all
         // -1 leaves no row highlighted until the user navigates with the arrow
         // keys, so the picker does not open with the first row pre-selected.
         selectedIndex = -1
@@ -96,7 +101,12 @@ final class ClipPickerViewModel: ObservableObject {
     }
 
     func pasteSelection() {
-        guard let entry = selectedEntry else { return }
+        // After typing a query, Return means the top match even with no row
+        // highlighted. An unfiltered list still needs an explicit choice.
+        let hasQuery = !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        guard let entry = selectedEntry ?? (hasQuery ? filteredEntries.first : nil) else {
+            return
+        }
         onDismiss()
         paster.paste(entry)
     }

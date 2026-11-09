@@ -9,6 +9,10 @@ final class ClipboardMonitor {
     private let onHistoryChange: () -> Void
     private var lastChangeCount: Int
     private var timer: Timer?
+    private var extractionRetriesLeft = 0
+
+    /// Polls to keep looking at one change whose data had not arrived yet.
+    static let maximumExtractionRetries = 6
 
     var isRunning: Bool {
         timer?.isValid == true
@@ -17,7 +21,7 @@ final class ClipboardMonitor {
     init(
         pasteboard: NSPasteboard = .general,
         historyStore: ClipboardHistoryStore,
-        pollingInterval: TimeInterval = 0.5,
+        pollingInterval: TimeInterval = 0.25,
         onHistoryChange: @escaping () -> Void = {}
     ) {
         self.pasteboard = pasteboard
@@ -51,16 +55,31 @@ final class ClipboardMonitor {
     /// the next timer tick to be imported immediately after the clear.
     func discardPendingPasteboardChange() {
         lastChangeCount = pasteboard.changeCount
+        extractionRetriesLeft = 0
     }
 
     func poll() {
         let changeCount = pasteboard.changeCount
-        guard changeCount != lastChangeCount else { return }
-        lastChangeCount = changeCount
+        if changeCount != lastChangeCount {
+            lastChangeCount = changeCount
+            extractionRetriesLeft = Self.maximumExtractionRetries
+        } else if extractionRetriesLeft > 0 {
+            extractionRetriesLeft -= 1
+        } else {
+            return
+        }
 
+        // Apps can clear the pasteboard and supply data a moment later (web
+        // copy buttons do), and that late write does not move `changeCount`.
+        // So an empty read keeps the change open for the next few polls.
+        if PasteboardExtractor.isExcludedFromHistory(pasteboard) {
+            extractionRetriesLeft = 0
+            return
+        }
         guard let clip = PasteboardExtractor.extract(from: pasteboard) else {
             return
         }
+        extractionRetriesLeft = 0
 
         do {
             try historyStore.capture(clip)

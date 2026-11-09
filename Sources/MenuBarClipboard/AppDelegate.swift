@@ -308,7 +308,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .applicationName: "Multiclipboard",
             .applicationVersion: Bundle.main.object(
                 forInfoDictionaryKey: "CFBundleShortVersionString"
-            ) as? String ?? "1.4.3",
+            ) as? String ?? "1.5.0",
             .credits: credits
         ])
         NSApp.activate(ignoringOtherApps: true)

@@ -5,8 +5,17 @@ import AppKit
 enum PickerFocus {
     case list
     case search
+    /// The Prompts tab is showing, so history commands must not act on the
+    /// hidden clip list. Only Escape still dismisses the picker.
+    case prompts
     /// An inline edit overlay (clip text, rename, prompt) owns the keyboard.
     case editing
+
+    /// A focused text field outranks a stale `.list`: it must keep Backspace
+    /// and typing, while Return and the arrows still drive the picker.
+    static func effective(stored: PickerFocus, textInputActive: Bool) -> PickerFocus {
+        stored == .list && textInputActive ? .search : stored
+    }
 }
 
 enum PickerCommand: Equatable {
@@ -33,6 +42,7 @@ enum PickerCommand: Equatable {
     ) -> PickerCommand? {
         // Overlay text fields need every key, Backspace and Return included.
         if focus == .editing { return nil }
+        if focus == .prompts { return keyCode == KeyCode.escape ? .dismiss : nil }
 
         let command = modifiers.contains(.command)
 

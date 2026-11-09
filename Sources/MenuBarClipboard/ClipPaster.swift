@@ -20,6 +20,15 @@ struct SystemClipPaster: ClipPasting {
     /// application before posting the synthetic ⌘V.
     static let focusPollInterval: TimeInterval = 0.05
     static let maximumFocusPolls = 20
+    /// Polls between repeated requests to hand focus back to the target.
+    static let reactivationPollInterval = 5
+    /// Frontmost flips before the target's window is ready for key events, so
+    /// a ⌘V posted straight away can land nowhere.
+    static let focusSettleDelay: TimeInterval = 0.08
+
+    /// The app the user was in when the picker opened. The picker activates
+    /// this app, so `frontmostApplication` cannot identify the paste target.
+    static var pasteTarget: NSRunningApplication?
 
     func paste(_ entry: ClipEntry) {
         write(entry)
@@ -98,7 +107,10 @@ struct SystemClipPaster: ClipPasting {
                 forType: .string
             )
         case .rtf:
+            // Plain-text-only apps (terminals, editors, many web fields) ignore
+            // RTF, so without this flavour the paste does nothing there.
             pasteboard.setData(entry.data, forType: .rtf)
+            pasteboard.setString(entry.fullText, forType: .string)
         case .image:
             // Finder can't accept raw image bytes on ⌘V — it only pastes files.
             // When Finder is frontmost, drop the image to a temp file and put the
@@ -107,10 +119,7 @@ struct SystemClipPaster: ClipPasting {
                let fileURL = Self.writeTemporaryImageFile(entry.data, baseName: entry.displayName) {
                 pasteboard.writeObjects([fileURL as NSURL])
             } else {
-                pasteboard.setData(
-                    entry.data,
-                    forType: PasteboardExtractor.imagePasteboardType(for: entry.data)
-                )
+                Self.writeImage(entry.data, to: pasteboard)
             }
         case .fileURL:
             let urls = String(decoding: entry.data, as: UTF8.self)
@@ -130,11 +139,24 @@ struct SystemClipPaster: ClipPasting {
         )
     }
 
-    /// Whether the app that will receive the synthetic ⌘V is Finder. The picker
-    /// is a non-activating panel, so the frontmost app is still the target the
-    /// user was in when they opened the picker.
+    /// Apps differ in which image flavour they accept, so offer the stored
+    /// bytes plus PNG and TIFF rather than the single captured format.
+    private static func writeImage(_ data: Data, to pasteboard: NSPasteboard) {
+        let nativeType = PasteboardExtractor.imagePasteboardType(for: data)
+        pasteboard.setData(data, forType: nativeType)
+
+        guard let bitmap = NSBitmapImageRep(data: data) else { return }
+        if nativeType != .png, let png = bitmap.representation(using: .png, properties: [:]) {
+            pasteboard.setData(png, forType: .png)
+        }
+        if nativeType != .tiff, let tiff = bitmap.tiffRepresentation {
+            pasteboard.setData(tiff, forType: .tiff)
+        }
+    }
+
+    /// Whether the app that will receive the synthetic ⌘V is Finder.
     private static func frontmostAppIsFinder() -> Bool {
-        NSWorkspace.shared.frontmostApplication?.bundleIdentifier == "com.apple.finder"
+        pasteTarget?.bundleIdentifier == "com.apple.finder"
     }
 
     /// Writes image data to a temp file and returns its URL, so a paste into
@@ -175,12 +197,16 @@ struct SystemClipPaster: ClipPasting {
     /// Synthesizes ⌘V. Requires the Accessibility permission; without it the
     /// events are silently dropped and the clip is still on the pasteboard.
     static func postPasteWhenReady(poll: Int = 0) {
-        let currentProcessID = ProcessInfo.processInfo.processIdentifier
-        let frontmostProcessID = NSWorkspace.shared.frontmostApplication?
-            .processIdentifier
+        let target = pasteTarget?.isTerminated == true ? nil : pasteTarget
 
-        if frontmostProcessID != currentProcessID {
-            postPasteKeystroke()
+        if isReadyToPaste(
+            frontmost: NSWorkspace.shared.frontmostApplication?.processIdentifier,
+            current: ProcessInfo.processInfo.processIdentifier,
+            target: target?.processIdentifier
+        ) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + focusSettleDelay) {
+                postPasteKeystroke()
+            }
             return
         }
 
@@ -189,9 +215,21 @@ struct SystemClipPaster: ClipPasting {
             return
         }
 
+        // Activation is a request macOS can decline mid-transition, so repeat it.
+        if poll > 0, poll % reactivationPollInterval == 0 {
+            target?.activate()
+        }
+
         DispatchQueue.main.asyncAfter(deadline: .now() + focusPollInterval) {
             postPasteWhenReady(poll: poll + 1)
         }
+    }
+
+    /// The paste may only go to the app the user picked it for. With no known
+    /// target, any app other than this one is the best available answer.
+    static func isReadyToPaste(frontmost: pid_t?, current: pid_t, target: pid_t?) -> Bool {
+        guard let frontmost, frontmost != current else { return false }
+        return target == nil || frontmost == target
     }
 
     private static func postPasteKeystroke() {

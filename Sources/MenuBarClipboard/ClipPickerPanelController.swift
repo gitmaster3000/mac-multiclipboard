@@ -20,7 +20,9 @@ final class ClipPickerPanelController: NSObject, NSWindowDelegate {
     private var panel: ClipPickerPanel?
     private var previewPanel: ImagePreviewPanel?
     private var previousApplication: NSRunningApplication?
+    private var lastExternalApplication: NSRunningApplication?
     private var keyMonitor: Any?
+    private var activationObserver: NSObjectProtocol?
 
     init(viewModel: ClipPickerViewModel, promptViewModel: PromptLibraryViewModel? = nil) {
         self.viewModel = viewModel
@@ -29,6 +31,18 @@ final class ClipPickerPanelController: NSObject, NSWindowDelegate {
         viewModel.onDismiss = { [weak self] in self?.hide() }
         viewModel.onPreviewImage = { [weak self] data in self?.showPreview(data) }
         viewModel.onHidePreview = { [weak self] in self?.hidePreview() }
+        lastExternalApplication = NSWorkspace.shared.frontmostApplication
+        activationObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didActivateApplicationNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
+            MainActor.assumeIsolated {
+                guard let app, app != .current else { return }
+                self?.lastExternalApplication = app
+            }
+        }
     }
 
     var isVisible: Bool {
@@ -48,8 +62,13 @@ final class ClipPickerPanelController: NSObject, NSWindowDelegate {
     }
 
     func show() {
-        previousApplication = NSWorkspace.shared.frontmostApplication
+        // Reopening before focus has left this app would otherwise record the
+        // picker itself as the paste target, and the paste would go nowhere.
+        let frontmost = NSWorkspace.shared.frontmostApplication
+        previousApplication = frontmost == .current ? lastExternalApplication : frontmost
+        SystemClipPaster.pasteTarget = previousApplication
         viewModel.prepareForPresentation()
+        promptViewModel?.prepareForPresentation()
 
         let panel = panel ?? makePanel()
         self.panel = panel
@@ -80,7 +99,12 @@ final class ClipPickerPanelController: NSObject, NSWindowDelegate {
         hidePreview()
         guard let panel, panel.isVisible else { return }
         panel.orderOut(nil)
-        previousApplication?.activate()
+        // Clicking away has already moved focus to the app the user chose, so
+        // only hand focus back when this app still holds it.
+        if NSApp.isActive, let previousApplication {
+            NSApp.yieldActivation(to: previousApplication)
+            previousApplication.activate()
+        }
         previousApplication = nil
     }
 
@@ -213,13 +237,13 @@ final class ClipPickerPanelController: NSObject, NSWindowDelegate {
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) {
             [weak self] event in
             guard let self, self.isVisible else { return event }
-            // If a text field is being edited (e.g. rename), let the event
-            // reach the field unchanged so backspace/typing work correctly.
-            if self.panel?.firstResponder is NSTextView { return event }
             guard let command = PickerCommand.from(
                 keyCode: event.keyCode,
                 modifiers: event.modifierFlags,
-                focus: self.viewModel.focus
+                focus: PickerFocus.effective(
+                    stored: self.viewModel.focus,
+                    textInputActive: self.panel?.firstResponder is NSTextView
+                )
             ) else { return event }
             self.viewModel.handle(command)
             return nil
