@@ -4,6 +4,25 @@ All notable changes to Multiclipboard are documented here. The format is based
 on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 uses semantic versioning.
 
+## [1.5.0]
+
+### Added
+
+- A type filter bar in the picker groups history into All, Text, Links, Images,
+  Video, Audio and Files. Categories are derived from each clip's content, so
+  existing history is grouped without migration.
+
+### Fixed
+
+- Copies from web "copy" buttons that write the clipboard a moment late, or
+  offer only a link or HTML flavour, are now captured. The monitor polls every
+  0.25 s and keeps watching a change briefly when the first read is empty.
+- Backspace no longer deletes clips while typing in the search field, rename
+  field or other edit overlays, and history shortcuts no longer act on the
+  hidden clip list while the Prompts tab is showing.
+- The rename field is editable in place instead of replacing its text on the
+  first keystroke.
+
 ## [1.4.2]
 
 ### Changed
